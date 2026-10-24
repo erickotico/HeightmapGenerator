@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forja de Mundos</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<!-- barra de menus (estilo Adobe): cada menu lista o que ele cuida; os itens são montados em js/ui.js -->
+<header id="menubar">
+  <div class="brand">Forja de Mundos</div>
+  <nav id="menus"></nav>
+  <div class="mb-right">
+    <div class="tabs">
+      <button data-view="2d" class="active">Mapa 2D</button>
+      <button data-view="3d">Prévia 3D</button>
+    </div>
+    <button id="btnGuide" class="accent">Guia do Unreal</button>
+  </div>
+  <input type="file" id="fileProject" accept=".forja,.png,.jpg,.jpeg,image/png,image/jpeg" hidden>
+</header>
+
+<!-- barra de opções: mostra só as opções da ferramenta escolhida -->
+<div id="optbar">
+  <span id="optTool" class="opt-tool"></span>
+  <label class="opt" data-opt="size">Tamanho <input type="range" id="brushSize" min="2" max="400" value="60"><output id="brushSizeOut"></output></label>
+  <label class="opt" data-opt="strength">Força <input type="range" id="brushStrength" min="0.02" max="1" step="0.01" value="0.35"><output id="brushStrengthOut"></output></label>
+  <label class="opt" data-opt="hardness">Dureza <input type="range" id="brushHardness" min="0" max="0.95" step="0.05" value="0.4"><output id="brushHardnessOut"></output></label>
+  <label class="opt" data-opt="intensity" title="Valor que o pincel e o balde aplicam. Ex.: montanhas com intensidade 0,5 ficam com metade da altura máxima.">Intensidade <input type="range" id="brushIntensity" min="0.05" max="1" step="0.05" value="1"><output id="brushIntensityOut"></output></label>
+  <label class="opt" data-opt="sculptAmt" title="Quanto cada pincelada de Elevar/Rebaixar sobe ou desce o terreno, no centro do pincel.">Metros por pincelada <input type="range" id="sculptAmt" min="1" max="200" step="1" value="20"><output id="sculptAmtOut"></output></label>
+  <label class="opt" data-opt="sculptTarget" title="Altura que o Nivelar aplica. O Conta-gotas pega a altura de um ponto do mapa.">Altura alvo (m) <input type="number" id="sculptTarget" value="100" step="1"></label>
+  <label class="opt" data-opt="fill">Tolerância <input type="range" id="fillTol" min="0" max="100" value="25"><output id="fillTolOut"></output></label>
+  <label class="opt" data-opt="fill"><input type="checkbox" id="fillGuide" checked> Usar contornos da imagem-guia</label>
+  <label class="opt" data-opt="marker">Tipo <select id="markerType"></select></label>
+  <span class="opt opt-hint" data-opt="hint" id="optHint"></span>
+  <span class="grow"></span>
+  <span id="optLayer" class="opt-layer"><span class="dot"></span><span class="nm"></span></span>
+  <label class="opt-fixed" title="Transparência da camada pintada por cima do mapa">Máscara <input type="range" id="overlayAlpha" min="0" max="1" step="0.05" value="0.55"></label>
+</div>
+
+<main>
+  <!-- ferramentas na vertical; botões com ◢ abrem um grupo (clique no triângulo, botão direito ou segure) -->
+  <nav id="toolbox"></nav>
+
+  <section id="center">
+    <div id="viewport">
+      <div id="stage">
+        <canvas id="cvTerrain"></canvas>
+        <canvas id="cvGuide"></canvas>
+        <canvas id="cvVeg"></canvas>
+        <canvas id="cvOverlay"></canvas>
+      </div>
+      <div id="brushCursor"></div>
+      <svg id="markerSvg"></svg>
+      <svg id="rulerSvg" hidden></svg>
+      <svg id="riverSvg" hidden></svg>
+      <div id="scaleBar"><div id="scaleBarLine"></div><span id="scaleBarText"></span></div>
+      <div id="viewHelp">Esquerdo: usar ferramenta · Shift: apagar · Direito/meio ou Espaço: mover · Roda: zoom · F: enquadrar</div>
+    </div>
+    <div id="view3d" hidden>
+      <canvas id="cv3d"></canvas>
+      <div class="v3d-ctrl">
+        <label>Exagero vertical <input type="range" id="exag3d" min="0.5" max="6" step="0.1" value="1.5"><output id="exag3dOut"></output></label>
+        <button id="btnCam3d" class="small">Recentralizar</button>
+        <button id="btnWalk" class="small accent" title="Câmera a 1,8 m do chão, em escala real, para sentir o tamanho do mundo">Andar pelo mapa (1,8 m)</button>
+        <span class="hint">Esquerdo: girar · Direito: mover · Roda: zoom</span>
+      </div>
+      <div id="walkHud" hidden></div>
+      <div id="no3d" hidden>Seu navegador não suporta WebGL2. Use o Chrome ou o Edge atualizados.</div>
+    </div>
+  </section>
+
+  <div id="dockResizer" title="Arraste para mudar a largura dos painéis"></div>
+
+  <!-- doca de painéis: recolher, arrastar para reordenar, soltar como janela, fechar (volta pelo menu Janela) -->
+  <aside id="dock">
+    <section class="dpanel" data-panel="markers" data-title="Marcadores">
+      <div id="markerPalette"></div>
+      <h4>No mapa</h4>
+      <div id="markerList"></div>
+      <p class="hint">Escolha a miniatura acima e clique no mapa para pôr; arraste para mover; Delete apaga o selecionado. Vão para o mapa do jogo e para uma tabela com a posição exata no Unreal.</p>
+    </section>
+
+    <section class="dpanel" data-panel="veg" data-title="Vegetação">
+      <div id="vegList"></div>
+      <label class="check"><input type="checkbox" id="vegShow" checked> Mostrar as arvorezinhas no mapa</label>
+      <p class="hint">Clique num tipo e pinte com o Pincel (Apagar tira a vegetação; o Balde preenche uma área). Cada ponto tem um tipo só. Não muda o relevo: na exportação vira uma máscara por tipo para o PCG espalhar as plantas exatamente onde você pintou.</p>
+    </section>
+
+    <section class="dpanel" data-panel="regions" data-title="Regiões / Reinos" id="regionPanel">
+      <div id="regionList"></div>
+      <button id="btnAddRegion" class="small">+ Nova região</button>
+      <p class="hint">Não muda o relevo: só delimita espaço (vira máscara para o PCG). Escolha a região aqui e pinte com o botão <b>Regiões</b> (8) da barra de ferramentas.</p>
+    </section>
+
+    <section class="dpanel" data-panel="guide" data-title="Imagem-guia (seu desenho)">
+      <div class="btnrow">
+        <button id="btnGuideLoad" class="small">Carregar imagem</button>
+        <button id="btnGuideRemove" class="small">Remover</button>
+      </div>
+      <input type="file" id="fileGuide" accept="image/*" hidden>
+      <div id="guideOpts" hidden>
+        <label class="row">Ajuste
+          <select id="guideFit">
+            <option value="contain">Caber inteira</option>
+            <option value="cover">Preencher (corta)</option>
+            <option value="stretch">Esticar</option>
+          </select>
+        </label>
+        <label class="row">Opacidade <input type="range" id="guideOpacity" min="0" max="1" step="0.05" value="0.5"></label>
+        <label class="check"><input type="checkbox" id="guideVisible" checked> Mostrar</label>
+        <h4>Converter desenho em camada</h4>
+        <label class="row">Detectar
+          <select id="convMode">
+            <option value="color">Cor escolhida (conta-gotas)</option>
+            <option value="dark">Áreas escuras</option>
+            <option value="bright">Áreas claras</option>
+          </select>
+        </label>
+        <div class="row"><span>Cor</span><span id="pickSwatch" class="swatch"></span><small id="pickHint">use o conta-gotas no mapa</small></div>
+        <label class="row">Tolerância / limite <input type="range" id="convTol" min="0" max="100" value="30"><output id="convTolOut"></output></label>
+        <label class="check"><input type="checkbox" id="convInvert"> Inverter (marcar tudo que NÃO bate)</label>
+        <label class="check"><input type="checkbox" id="convReplace" checked> Substituir a camada (desmarcado = somar)</label>
+        <p class="hint">Dica: na camada Terra, escolha a cor do mar e marque Inverter — tudo que não é mar vira terra.</p>
+        <button id="btnConvert" class="small">Converter para a camada ativa</button>
+      </div>
+      <p class="hint">Mapa feito à mão, no Paint ou foto do papel. Ele aparece por baixo do terreno para você pintar em cima, ou vira camada automaticamente.</p>
+    </section>
+
+    <section class="dpanel" data-panel="base" data-title="Heightmap base" id="basePanel" hidden>
+      <div id="baseName" class="info"></div>
+      <label class="row" title="Altura em metros do pixel mais escuro (preto).">Preto (m) <input type="number" id="baseMin" step="1"></label>
+      <label class="row" title="Altura em metros do pixel mais claro (branco).">Branco (m) <input type="number" id="baseMax" step="1"></label>
+      <div class="btnrow"><button id="btnBaseRemove" class="small">Remover heightmap base</button></div>
+      <p class="hint">O relevo vem da imagem. Montanhas, Colinas, Planaltos, Aplainar e Rios somam por cima. A camada Terra / Mar não é usada enquanto houver um heightmap base. O mar fica abaixo de 0 m.</p>
+    </section>
+
+    <section class="dpanel" data-panel="generate" data-title="Geração automática">
+      <label class="row" title="Mundo pronto em 1 clique: troca terra, relevo e ajustes de terreno. Regiões e imagem-guia ficam.">Modelo de mundo <select id="presetSel"></select></label>
+      <div class="btnrow"><button id="btnPreset" class="small accent">Aplicar modelo</button></div>
+      <p id="presetHint" class="hint"></p>
+      <h4>Ou gere por partes</h4>
+      <label class="row">Estilo
+        <select id="autoStyle">
+          <option value="continent">Continente</option>
+          <option value="islands">Arquipélago</option>
+          <option value="pangea">Pangeia (borda aberta)</option>
+        </select>
+      </label>
+      <label class="row">Terra <input type="range" id="autoCoverage" min="0.1" max="0.8" step="0.01" value="0.45"><output id="autoCoverageOut"></output></label>
+      <div class="btnrow">
+        <button id="btnAutoLand" class="small">Gerar terra / mar</button>
+        <button id="btnAutoRelief" class="small">Gerar montanhas e colinas</button>
+      </div>
+      <p class="hint">Usa a semente atual. Depois é só pintar por cima.</p>
+    </section>
+
+    <section class="dpanel" data-panel="erosion" data-title="Erosão">
+      <div id="erosionState" class="info"></div>
+      <button id="btnErode" class="wide">Aplicar erosão</button>
+      <p class="hint">Simula chuva e desmoronamento: cria ravinas, vales e encostas naturais. Pintar de novo volta para a versão sem erosão.</p>
+    </section>
+
+    <section class="dpanel" data-panel="terrain" data-title="Ajustes de terreno">
+      <div id="paramGroups"></div>
+    </section>
+
+    <section class="dpanel" data-panel="export" data-title="Exportar para o Unreal">
+      <label class="row" title="As instruções do Guia e do LEIA-ME seguem o que existe nesta versão.">Versão do Unreal <select id="exUe"></select></label>
+      <label class="row">Nome do mundo <input type="text" id="exName" value="MeuMundo"></label>
+      <label class="row">Resolução do heightmap <select id="exRes"></select></label>
+      <label class="row" title="Distância entre vértices do Landscape. Vira o Scale X/Y no Unreal (1 m = 100).">Metros por vértice
+        <select id="exMpq">
+          <option value="0.5">0,5 m (detalhe máximo)</option>
+          <option value="1">1 m (padrão do Unreal)</option>
+          <option value="2">2 m</option>
+          <option value="4">4 m (mundo gigante, menos detalhe)</option>
+        </select>
+      </label>
+      <div id="worldSize" class="info"></div>
+      <label class="row" title="Ruído fino somado na exportação, para a resolução final não ficar lisa demais.">Detalhe fino (m) <input type="range" id="exDetail" min="0" max="6" step="0.1" value="1.2"><output id="exDetailOut"></output></label>
+      <label class="check"><input type="checkbox" id="exErode" checked> Aplicar erosão antes (se ainda não aplicou)</label>
+      <label class="check"><input type="checkbox" id="exLayers" checked> Camadas de material (Grama, Rocha, Areia, Neve)</label>
+      <label class="check"><input type="checkbox" id="exRegions" checked> Mapa de regiões + máscara por região</label>
+      <label class="check"><input type="checkbox" id="exVeg" checked> Máscaras de vegetação (uma por tipo, para o PCG)</label>
+      <label class="check"><input type="checkbox" id="exMarkers" checked> Marcadores (tabela para Data Table / PCG)</label>
+      <label class="check"><input type="checkbox" id="exMap" checked> Mapa do jogo (imagem ilustrada + versão limpa)</label>
+      <label class="row">Tamanho do mapa
+        <select id="exMapSize"><option value="1024">1024 px</option><option value="2048" selected>2048 px</option><option value="4096">4096 px</option></select>
+      </label>
+      <button id="btnMapPreview" class="small">Ver mapa do jogo</button>
+      <label class="check"><input type="checkbox" id="exR16"> Também gerar .r16 (RAW)</label>
+      <button id="btnExport" class="accent wide">Exportar pacote (.zip)</button>
+    </section>
+  </aside>
+</main>
+
+<footer id="status">
+  <span id="stCursor">—</span>
+  <span id="stStats">—</span>
+  <span id="stSave"></span>
+  <span class="grow"></span>
+  <span id="stTask"></span>
+  <div id="progress"><div id="progressBar"></div></div>
+</footer>
+
+<div id="modal" hidden>
+  <div class="modal-box">
+    <button id="modalClose" class="modal-x" title="Fechar">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="js/engine.js"></script>
+<script src="js/gl3d.js"></script>
+<script src="js/unreal.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
