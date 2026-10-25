@@ -130,7 +130,7 @@ const I18N_EN = {
   '4. Mapa do jogo e marcadores': '4. Game map and markers', 'Mapa (pasta': 'Map (folder',
   'é uma imagem para a interface, não passa pelo PCG. Importe como textura (Texture Group = UI, Compression = UserInterface2D, Mip Gen Settings = NoMipmaps) e use num Widget de mapa/minimapa. O mapa cobre o mundo inteiro, centro em X = 0 / Y = 0, topo da imagem = Y negativo. Posição de um ator na imagem (0 a 1):': 'is an image for the UI, it does not go through PCG. Import it as a texture (Texture Group = UI, Compression = UserInterface2D, Mip Gen Settings = NoMipmaps) and use it in a map/minimap Widget. The map covers the whole world, center at X = 0 / Y = 0, top of the image = negative Y. Position of an actor on the image (0 to 1):',
   'Marcadores (pasta': 'Markers (folder', 'CSV pronto para virar Data Table. Crie uma Structure com': 'CSV ready to become a Data Table. Create a Structure with',
-  ', arraste o CSV para o Content Browser e escolha essa Structure. A Posicao já vem em cm no mesmo sistema do Landscape.': ', drag the CSV into the Content Browser and choose that Structure. Posicao already comes in cm in the same system as the Landscape.',
+  ', arraste o CSV para o Content Browser e escolha essa Structure. A Posicao já vem em cm no mesmo sistema do Landscape. Nas pontes e cachoeiras automáticas, a Rotacao aponta na direção da estrada / do rio e a Medida_m é o vão da ponte ou a altura da queda.': ', drag the CSV into the Content Browser and choose that Structure. Posicao already comes in cm in the same system as the Landscape. On automatic bridges and waterfalls, Rotacao points along the road / river and Medida_m is the bridge span or the drop height.',
   'Outras combinações válidas para {s} × {s}': 'Other valid combinations for {s} × {s}', 'Tamanho do mundo por resolução e metros por vértice': 'World size by resolution and meters per vertex', 'Resolução': 'Resolution',
   '★ = tamanhos listados pela Epic. 1 m é o padrão do Unreal. 2 m dá um mundo 4× maior em área com o mesmo custo; o detalhe fino passa a vir do material e da vegetação.': '★ = sizes listed by Epic. 1 m is the Unreal default. 2 m gives a world 4× larger in area at the same cost; fine detail then comes from the material and the vegetation.',
   'Como deixar um mapa grande leve': 'How to keep a big map light',
@@ -151,6 +151,18 @@ const I18N_EN = {
   // ---------- marcadores ----------
   'Capital': 'Capital', 'Cidade': 'City', 'Vila': 'Village', 'Castelo / Fortaleza': 'Castle / Fortress', 'Porto': 'Port', 'Templo / Santuário': 'Temple / Shrine', 'Masmorra': 'Dungeon',
   'Caverna / Mina': 'Cave / Mine', 'Ruínas': 'Ruins', 'Ponto de interesse': 'Point of interest', 'Árvore ancestral': 'Ancient tree', 'Bosque sagrado': 'Sacred grove', 'Fonte / Nascente': 'Spring / Fountain',
+  'Ponte': 'Bridge', 'Pontes e cachoeiras automáticas: Rotacao = direção da estrada / do rio; Medida_m = vão da ponte ou altura da queda.': 'Automatic bridges and waterfalls: Rotacao = road / river direction; Medida_m = bridge span or drop height.', 'Ligar cidades': 'Connect cities', 'Pontes e cachoeiras': 'Bridges and waterfalls',
+  'Liga capital, cidades e castelos com estradas que seguem o relevo (vilas ficam de fora). Depois marca pontes e cachoeiras.': 'Connects the capital, cities and castles with roads that follow the terrain (villages are left out). Then marks bridges and waterfalls.',
+  'Marca uma ponte onde cada estrada cruza um rio e uma cachoeira onde o rio cai forte. Refazer troca só os marcadores automáticos.': 'Marks a bridge where each road crosses a river and a waterfall where the river drops sharply. Redoing replaces only the automatic markers.',
+  'Estradas entre capital, cidades e castelos': 'Roads between capital, cities and castles', 'Marcar pontes e cachoeiras': 'Mark bridges and waterfalls',
+  'Traçando estradas: {s} de {s}…': 'Routing roads: {s} of {s}…',
+  'Ponha pelo menos dois marcadores de Capital, Cidade ou Castelo para ligar com estradas.': 'Place at least two Capital, City or Castle markers to connect with roads.',
+  'Refazer a rede automática? As {s} estrada(s) automáticas atuais serão trocadas (as feitas à mão ficam). Ctrl+Z desfaz.': 'Redo the automatic network? The current {s} automatic road(s) will be replaced (hand-made ones stay). Ctrl+Z undoes.',
+  '{s} estrada(s) ligando {s} lugares': '{s} road(s) connecting {s} places', '{s} ligação(ões) sem caminho por terra (mar ou lago no meio)': '{s} link(s) with no land path (sea or lake in between)',
+  'Refazer pontes e cachoeiras? Os {s} marcadores automáticos atuais serão trocados (os seus ficam). Ctrl+Z desfaz.': 'Redo bridges and waterfalls? The current {s} automatic markers will be replaced (yours stay). Ctrl+Z undoes.',
+  '{s} ponte(s) e {s} cachoeira(s) marcadas': '{s} bridge(s) and {s} waterfall(s) marked', 'São marcadores comuns: dá para mover, renomear ou apagar.': 'They are regular markers: you can move, rename or delete them.',
+  'vão {s} m': 'span {s} m', 'queda {s} m': 'drop {s} m',
+  'Nas pontes e cachoeiras automáticas, a Rotacao aponta na direção da estrada / do rio e a Medida_m é o vão da ponte ou a altura da queda.': 'On automatic bridges and waterfalls, Rotacao points along the road / river and Medida_m is the bridge span or the drop height.',
   'Cachoeira': 'Waterfall', 'Lago / Lagoa': 'Lake / Pond', 'Monólito / Pedra sagrada': 'Monolith / Sacred stone', 'Covil de criaturas': 'Creature lair',
   'Castelo': 'Castle', 'Templo': 'Temple', 'Caverna': 'Cave', 'Fonte': 'Spring', 'Lago': 'Lake', 'Monólito': 'Monolith', 'Covil de cr...': 'Creature lair',
   'Construções': 'Buildings', 'Vegetação / ambiente': 'Vegetation / environment', 'Nenhum marcador ainda.': 'No markers yet.', 'Tipo': 'Type', 'Construção': 'Building', 'Apagar marcador': 'Delete marker',
@@ -215,7 +227,7 @@ const I18N_EN = {
   'Nanite no Landscape': 'Nanite on the Landscape', 'opção "Enable Nanite" nos detalhes do ator Landscape; reduz o custo da geometria distante.': '"Enable Nanite" option in the Landscape actor details; reduces the cost of distant geometry.',
   'existe a partir do 5.2 (conferido); nesta versão, procure "Enable Nanite" nos detalhes do Landscape — se não houver, ignore.': 'exists from 5.2 on (checked); in this version, look for "Enable Nanite" in the Landscape details — if it is not there, ignore it.',
   'Vegetação e objetos': 'Vegetation and objects', 'PCG ou Foliage com instâncias em vez de colocar à mão': 'PCG or Foliage with instances instead of placing by hand', '; HLOD do World Partition para o que está longe.': '; World Partition HLOD for what is far away.',
-  'Blueprint (qualquer versão): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor na Posicao (escolha a classe pelo Tipo).': 'Blueprint (any version): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor at Posicao (pick the class by Tipo).',
+  'Blueprint (qualquer versão): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor na Posicao e Rotacao (escolha a classe pelo Tipo).': 'Blueprint (any version): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor at Posicao and Rotacao (pick the class by Tipo).',
   'd) PCG: nó "Load Data Table" (Output Type = Point). Em Attribute Mapping, ligue "Posicao" a "$Position".': 'd) PCG: "Load Data Table" node (Output Type = Point). In Attribute Mapping, map "Posicao" to "$Position".',
   'Cada marcador vira um ponto com os atributos Nome, Tipo e Regiao; filtre por Tipo e gere o que quiser.': 'Each marker becomes a point with the attributes Nome, Tipo and Regiao (name, type, region); filter by Tipo and spawn what you want.',
   'd) PCG: se a sua versão tiver o nó "Load Data Table", use Output Type = Point e ligue "Posicao" a "$Position"': 'd) PCG: if your version has the "Load Data Table" node, use Output Type = Point and map "Posicao" to "$Position"',
@@ -373,7 +385,8 @@ const I18N = (() => {
     const k = norm(pt);
     if (k.includes('{s}')) {
       const parts = k.split('{s}').map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-      patterns.push({ re: new RegExp('^' + parts.join('(.+?)') + '$'), en, len: k.length });
+      // o trecho variável não atravessa um " · " (senão "altura {s} m" engoliria "altura 25 m · vão 110 m")
+      patterns.push({ re: new RegExp('^' + parts.join('((?:(?! · ).)+?)') + '$'), en, len: k.length });
     } else {
       exact.set(k, en);
       // a mesma frase sem o ponto final (quando vem emendada com outra)
@@ -403,6 +416,7 @@ const I18N = (() => {
       return p.en.replace(/\{s\}/g, () => { const v = m[i++]; return depth < 2 ? find(v, depth + 1) ?? v : v; });
     }
     if (depth > 2) return null;
+    if (/[^.]\.$/.test(k)) { const b = find(k.slice(0, -1), depth + 1); if (b != null) return b.replace(/\.?$/, '.'); } // frase + ponto final
     let m = /^(\d+\) |[a-e]\) )(.+)$/.exec(k); // passo numerado do LEIA-ME: "7) Água"
     if (m) { const b = find(m[2], depth + 1); if (b != null) return m[1] + b; }
     m = /^(.+?)( \([^()]{1,5}\))$/.exec(k);

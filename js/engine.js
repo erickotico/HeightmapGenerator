@@ -419,7 +419,9 @@ function ForjaEngine() {
         if ((Math.abs(dx) === 2 || Math.abs(dy) === 2) && (blocked(y * W + x + Math.sign(dx)) || blocked((y + Math.sign(dy)) * W + x))) continue;
         const len = Math.hypot(dx, dy) * cell, grade = Math.abs(H[nb] - hc) / len, over = Math.max(0, grade - gmax);
         let cost = len * (1 + 25 * grade * grade + 4000 * over * over);
-        if (!rc && isRiver(nb)) cost += bridge;
+        const onRoad = o.reuse && o.reuse[nb]; // estrada que já existe: mais barato seguir por ela (troncos em comum)
+        if (onRoad) cost *= 0.4;
+        else if (isRiver(nb)) cost += (rc ? 0 : bridge) + len * 6; // atravessa o rio reto, não anda por dentro dele
         const ng = g[c] + cost;
         if (ng < g[nb]) { g[nb] = ng; parent[nb] = c; push(ng + heur(nb), nb); }
       }

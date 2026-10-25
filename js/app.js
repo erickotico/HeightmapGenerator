@@ -1458,7 +1458,7 @@ function openGuide() {
     <p><b>Mapa (pasta <code>mapa/</code>):</b> é uma imagem para a interface, não passa pelo PCG. Importe como textura (Texture Group = UI, Compression = UserInterface2D, Mip Gen Settings = NoMipmaps) e use num Widget de mapa/minimapa.
       O mapa cobre o mundo inteiro, centro em X = 0 / Y = 0, topo da imagem = Y negativo. Posição de um ator na imagem (0 a 1):</p>
     <p class="v">U = (X + ${fmt(((res - 1) / 2) * mpq * 100).replace(/\./g, '')}) / ${fmt((res - 1) * mpq * 100).replace(/\./g, '')} &nbsp;&nbsp; V = (Y + ${fmt(((res - 1) / 2) * mpq * 100).replace(/\./g, '')}) / ${fmt((res - 1) * mpq * 100).replace(/\./g, '')}</p>
-    <p><b>Marcadores (pasta <code>marcadores/</code>):</b> CSV pronto para virar Data Table. Crie uma Structure com <span class="v">Nome (String) · Tipo (String) · Regiao (String) · Posicao (Vector)</span>, arraste o CSV para o Content Browser e escolha essa Structure. A Posicao já vem em cm no mesmo sistema do Landscape.</p>
+    <p><b>Marcadores (pasta <code>marcadores/</code>):</b> CSV pronto para virar Data Table. Crie uma Structure com <span class="v">Nome (String) · Tipo (String) · Regiao (String) · Posicao (Vector) · Rotacao (Rotator) · Medida_m (Float)</span>, arraste o CSV para o Content Browser e escolha essa Structure. A Posicao já vem em cm no mesmo sistema do Landscape. Nas pontes e cachoeiras automáticas, a Rotacao aponta na direção da estrada / do rio e a Medida_m é o vão da ponte ou a altura da queda.</p>
     <ul>${UE.markerUsage(v).map((l) => `<li>${escapeHtml(l.replace(/^[a-e]\) /, ''))}</li>`).join('')}</ul>
 
     <h3>Outras combinações válidas para ${res} × ${res}</h3>
@@ -1660,6 +1660,8 @@ const MARKER_ICONS = {
     [R_(17, 19, 12, 9), IC.wall], [ROOF(15.5, 13.5, 15, 5.5), IC.roof2], [R_(21, 22, 2.2, 2.2), IC.dark], [R_(25, 22, 2.2, 2.2), IC.dark]],
   castelo: [[CREN(3, 8, 7, 20, 2), IC.stone2], [CREN(22, 8, 7, 20, 2), IC.stone2], [CREN(9, 14, 14, 14, 3), IC.stone], [ARCH(13.5, 19, 5, 9), IC.dark],
     [R_(5.5, 13, 2, 3), IC.dark], [R_(24.5, 13, 2, 3), IC.dark], ['M6.5 8V1.5', IC.line, 'line', 1.2], ['M6.9 1.6l5 1.6-5 1.6z', IC.red]],
+  ponte: [['M4 17h24v11h-5v-3a7 7 0 0 0-14 0v3H4z', IC.stone2], [R_(2, 14, 28, 3), IC.stone], ['M3 10.5h26', IC.wood, 'line', 1.4],
+    ['M4 14v-3.5M10 14v-3.5M16 14v-3.5M22 14v-3.5M28 14v-3.5', IC.wood, 'line', 1.4], ['M1 28c2.5-1.6 5-1.6 7.5 0s5 1.6 7.5 0 5-1.6 7.5 0 5 1.6 7.5 0', IC.water, 'line', 1.8]],
   porto: [[R_(3, 20, 14, 2.5), IC.wood], [R_(5, 22.5, 1.6, 5), IC.wood], [R_(13, 22.5, 1.6, 5), IC.wood], ['M17 20h12l-2.5 4.5h-7z', IC.wood],
     ['M23 20V6', IC.line, 'line', 1.2], ['M23.6 7l5 10h-5z', '#efe7d4'], ['M1 28c2.5-1.6 5-1.6 7.5 0s5 1.6 7.5 0 5-1.6 7.5 0 5 1.6 7.5 0', IC.water, 'line', 1.8]],
   santuario: [[ROOF(4, 5, 24, 7), IC.stone], [R_(5, 12, 22, 2.2), IC.stone], [R_(7, 14.2, 2.6, 10.8), IC.wall], [R_(12.2, 14.2, 2.6, 10.8), IC.wall],
@@ -1694,6 +1696,7 @@ const MARKER_TYPES = [
   { id: 'vila', cat: 'build', name: 'Vila', color: '#e8d9a8' },
   { id: 'castelo', cat: 'build', name: 'Castelo / Fortaleza', color: '#c0c6d0' },
   { id: 'porto', cat: 'build', name: 'Porto', color: '#3f8fd6' },
+  { id: 'ponte', cat: 'build', name: 'Ponte', color: '#a9a294' },
   { id: 'santuario', cat: 'build', name: 'Templo / Santuário', color: '#5dade2' },
   { id: 'masmorra', cat: 'build', name: 'Masmorra', color: '#d64541' },
   { id: 'caverna', cat: 'build', name: 'Caverna / Mina', color: '#8d6e4f' },
@@ -1818,7 +1821,7 @@ function buildMarkerList() {
     row.innerHTML = `<svg class="mk-ico" viewBox="0 0 22 22">${markerIconSVG(m.type, 11, t.ay ? 21.5 : 20, 20)}</svg><input type="text" value="${escapeHtml(m.name)}" title="Nome">
       <select title="Tipo"><optgroup label="Construção">${opts('build')}</optgroup><optgroup label="Vegetação / ambiente">${opts('env')}</optgroup></select>
       <button title="Apagar marcador">×</button>
-      <span class="mk-reg">${reg ? escapeHtml(reg) + ' · ' : ''}altura ${fmt(w.h, 0)} m</span>`;
+      <span class="mk-reg">${reg ? escapeHtml(reg) + ' · ' : ''}altura ${fmt(w.h, 0)} m${m.len ? ` · vão ${fmt(m.len, 0)} m` : ''}${m.drop ? ` · queda ${fmt(m.drop, 0)} m` : ''}</span>`;
     const [name] = row.querySelectorAll('input'), sel = row.querySelector('select');
     row.onclick = (e) => { if (['INPUT', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return; S.markerSel = m.id; renderMarkers(); buildMarkerList(); };
     name.onchange = () => { snapshot(['markers']); m.name = name.value.trim() || t.name; markDirty(); renderMarkers(); };
@@ -1830,18 +1833,18 @@ function buildMarkerList() {
 const csvq = (s) => '"' + String(s).replace(/"/g, '""') + '"';
 // CSV no formato de importação de Data Table do Unreal: 1ª coluna = nome da linha; Vector = (X=..,Y=..,Z=..).
 function markersCSV() {
-  const lines = ['---,Nome,Tipo,Regiao,Posicao'];
+  const lines = ['---,Nome,Tipo,Regiao,Posicao,Rotacao,Medida_m'];
   for (const m of S.markers) {
     const w = markerWorld(m);
     lines.push([fileSafe(m.name) + '_' + m.id, csvq(m.name), csvq(markerTypeDef(m.type).name), csvq(markerRegion(m)),
-      csvq(`(X=${w.x.toFixed(1)},Y=${w.y.toFixed(1)},Z=${w.z.toFixed(1)})`)].join(','));
+      csvq(`(X=${w.x.toFixed(1)},Y=${w.y.toFixed(1)},Z=${w.z.toFixed(1)})`), csvq(`(Pitch=0,Yaw=${m.yaw || 0},Roll=0)`), m.len || m.drop || 0].join(','));
   }
   return lines.join('\r\n') + '\r\n';
 }
 function markersJSON() {
   return JSON.stringify({
     mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0,
-    marcadores: S.markers.map((m) => { const w = markerWorld(m); return { nome: m.name, tipo: markerTypeDef(m.type).name, regiao: markerRegion(m), x: +w.x.toFixed(1), y: +w.y.toFixed(1), z: +w.z.toFixed(1), altura_m: +w.h.toFixed(2), u: +m.u.toFixed(5), v: +m.v.toFixed(5) }; })
+    marcadores: S.markers.map((m) => { const w = markerWorld(m); return { nome: m.name, tipo: markerTypeDef(m.type).name, regiao: markerRegion(m), x: +w.x.toFixed(1), y: +w.y.toFixed(1), z: +w.z.toFixed(1), altura_m: +w.h.toFixed(2), yaw: m.yaw || 0, medida_m: m.len || m.drop || 0, automatico: !!m.auto, u: +m.u.toFixed(5), v: +m.v.toFixed(5) }; })
   }, null, 2);
 }
 
@@ -1852,28 +1855,100 @@ function markersJSON() {
 const RIVER_MIN_M = 150, RIVER_STEP_M = 30, RIVER_BRIDGE_M = 12; // falhas de até ~2× isso viram o mesmo rio
 const gridM = () => worldM() / (S.W - 1); // metros entre dois pontos da grade (mesma conta dos marcadores)
 const gridToCm = (x, y) => { const span = (S.ex.res - 1) * S.ex.mpq * 100; return { x: +((x / (S.W - 1) - 0.5) * span).toFixed(1), y: +((y / (S.W - 1) - 0.5) * span).toFixed(1) }; };
-function riverExport() {
-  if (!S.H) return [];
+// Todos os rios como linhas na grade, da nascente para a foz: {name, len (m), mouth?, pts [{x, y, w (m)}]}.
+function riverLinesGrid(step) {
   const g = gridM(), out = [];
-  const seaAt = (p) => (heightAtMap(p.x, p.y) ?? 1) < 0;
   for (const r of S.vrivers) {
-    const smp = Feat.riverSamples(r, Math.max(1, RIVER_STEP_M / g));
-    if (smp.length < 2) continue;
-    out.push({ nome: r.name, foz: seaAt(smp[smp.length - 1]) ? 'mar' : 'terra', comprimento_m: Math.round(Feat.riverLengthM(r)),
-      pontos: smp.map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((p.w + S.P.riverWidth) * 100) })) });
+    const smp = Feat.riverSamples(r, step);
+    if (smp.length >= 2) out.push({ name: r.name, len: Feat.riverLengthM(r), pts: smp });
   }
   if (S.masks.rivers.some((v) => v > 0.5)) {
     // pintura menos o que já é rio em linha (senão o mesmo rio sairia duas vezes)
     const m = Float32Array.from(S.masks.rivers);
     if (S.vrivers.length) { const v = Feat.riverRaster(); for (let i = 0; i < m.length; i++) if (v[i] > 0.2) m[i] = 0; }
-    const lines = Rivers.extract(m, S.H, S.W, { minLen: RIVER_MIN_M / g, step: Math.max(1, RIVER_STEP_M / g), bridge: Math.max(1, RIVER_BRIDGE_M / g) });
-    for (const ln of lines) {
-      out.push({ nome: '', foz: ln.mouth ? 'mar' : 'terra', comprimento_m: Math.round(Rivers.length(ln.pts) * g),
-        pontos: ln.pts.map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((2 * p.r * g + S.P.riverWidth) * 100) })) });
-    }
+    const lines = Rivers.extract(m, S.H, S.W, { minLen: RIVER_MIN_M / g, step, bridge: Math.max(1, RIVER_BRIDGE_M / g) });
+    for (const ln of lines) out.push({ name: '', len: Rivers.length(ln.pts) * g, mouth: ln.mouth, pts: ln.pts.map((p) => ({ x: p.x, y: p.y, w: 2 * p.r * g })) });
   }
+  return out;
+}
+function riverExport() {
+  if (!S.H) return [];
+  const g = gridM(), seaAt = (p) => (heightAtMap(p.x, p.y) ?? 1) < 0;
+  const out = riverLinesGrid(Math.max(1, RIVER_STEP_M / g)).map((r) => ({
+    nome: r.name, foz: (r.mouth ?? seaAt(r.pts[r.pts.length - 1])) ? 'mar' : 'terra', comprimento_m: Math.round(r.len),
+    pontos: r.pts.map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((p.w + S.P.riverWidth) * 100) })) }));
   out.forEach((r, k) => { if (!r.nome) r.nome = 'Rio ' + String(k + 1).padStart(2, '0'); });
   return out;
+}
+
+// ================= pontes e cachoeiras automáticas =================
+// Ponte = trecho de estrada por cima de rio (em linha ou pintado). Cachoeira = rio que cai pelo menos 6 m com
+// rampa de 35% ou mais (janela de 40 m), uma a cada 200 m de rio no máximo. Viram marcadores comuns (mover,
+// renomear, apagar) com auto = true: refazer troca só os automáticos. Yaw = direção da estrada / do rio
+// (graus do Unreal, de +X para +Y); len = vão da ponte, drop = altura da queda (m).
+const FALL_MIN_DROP = 6, FALL_MIN_GRADE = 0.35, FALL_WIN_M = 40, FALL_SPACING_M = 200, BRIDGE_PAD_M = 4, BRIDGE_MERGE_M = 30;
+function autoBridgesFalls(ask = true) {
+  if (!S.H) return;
+  const old = S.markers.filter((m) => m.auto).length;
+  if (ask && old && !confirm(`Refazer pontes e cachoeiras? Os ${old} marcadores automáticos atuais serão trocados (os seus ficam). Ctrl+Z desfaz.`)) return;
+  snapshot(['markers']);
+  S.markers = S.markers.filter((m) => !m.auto);
+  const W = S.W, g = gridM(), riv = Feat.combinedRivers();
+  const wet = (p) => riv[clamp(Math.round(p.y), 0, W - 1) * W + clamp(Math.round(p.x), 0, W - 1)] > 0.5;
+  const yaw = (a, b) => +((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI).toFixed(1);
+  const add = (type, p, extra) => {
+    const t = markerTypeDef(type), n = S.markers.filter((m) => m.type === type).length + 1;
+    S.markers.push({ id: ++S.markerSeq, name: `${I18N.tr(t.name)} ${n}`, type, u: clamp(p.x / (W - 1), 0, 1), v: clamp(p.y / (W - 1), 0, 1), auto: true, ...extra });
+  };
+  let nb = 0, nf = 0;
+  for (const r of S.roads) {
+    const g0 = Feat.roadGrid(r), P = [];
+    for (let i = 0; i < g0.length - 1; i++) {
+      const a = g0[i], b = g0[i + 1], k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 2));
+      for (let j = 0; j < k; j++) P.push({ x: a.x + ((b.x - a.x) * j) / k, y: a.y + ((b.y - a.y) * j) / k });
+    }
+    // trechos molhados; os separados por menos de 30 m viram uma ponte só
+    const runs = [];
+    let a0 = -1;
+    for (let i = 0; i <= P.length; i++) {
+      const on = i < P.length && wet(P[i]);
+      if (on && a0 < 0) a0 = i;
+      else if (!on && a0 >= 0) {
+        const last = runs[runs.length - 1];
+        if (last && (a0 - last[1]) * 0.5 * g < BRIDGE_MERGE_M) last[1] = i - 1; else runs.push([a0, i - 1]);
+        a0 = -1;
+      }
+    }
+    for (const [ra, rb] of runs) {
+      add('ponte', P[(ra + rb) >> 1], { yaw: yaw(P[Math.max(0, ra - 2)], P[Math.min(P.length - 1, rb + 2)]), len: Math.round((rb - ra) * 0.5 * g + 2 * BRIDGE_PAD_M) });
+      nb++;
+    }
+  }
+  for (const ln of riverLinesGrid(1)) {
+    const p = ln.pts, n = p.length, h = p.map((q) => heightAtMap(q.x, q.y) ?? 0), s = [0];
+    for (let i = 1; i < n; i++) s.push(s[i - 1] + Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y) * g);
+    const cand = [];
+    for (let i = 0, j = 0; i < n; i++) {
+      if (j < i) j = i;
+      while (j < n - 1 && s[j] - s[i] < FALL_WIN_M) j++;
+      const dist = s[j] - s[i];
+      if (dist < FALL_WIN_M * 0.5) break;
+      const drop = h[i] - h[j];
+      if (drop >= FALL_MIN_DROP && drop / dist >= FALL_MIN_GRADE) cand.push({ i, j, drop });
+    }
+    cand.sort((a, b) => b.drop - a.drop);
+    const taken = [];
+    for (const c of cand) {
+      const at = (s[c.i] + s[c.j]) / 2;
+      if (taken.some((t) => Math.abs(t - at) < FALL_SPACING_M)) continue;
+      taken.push(at);
+      add('cachoeira', p[(c.i + c.j) >> 1], { yaw: yaw(p[c.i], p[c.j]), drop: Math.round(c.drop) });
+      nf++;
+    }
+  }
+  S.markerSel = null;
+  markDirty(); renderMarkers(); buildMarkerList();
+  toast(`${nb} ponte(s) e ${nf} cachoeira(s) marcadas. São marcadores comuns: dá para mover, renomear ou apagar.`);
 }
 function riversJSON(rivers) {
   return JSON.stringify({ mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0, profundidadeLeito_m: S.P.riverDepth, rios: rivers }, null, 1);

@@ -111,11 +111,11 @@ const Feat = (() => {
     const pts = simplify(smoothPath(path, 2), 0.35);
     return pts.map((p) => g2uv(p.x, p.y));
   }
-  async function routeSeg(a, b, kind) {
+  async function routeSeg(a, b, kind, reuse = null) {
     const ga = uv2g(a), gb = uv2g(b);
     const r = await call('roadRoute', {
       ax: Math.round(ga.x), ay: Math.round(ga.y), bx: Math.round(gb.x), by: Math.round(gb.y),
-      maxGrade: ROAD_KINDS[kind].grade, lakes: S.masks.lakes, rivers: combinedRivers()
+      maxGrade: ROAD_KINDS[kind].grade, lakes: S.masks.lakes, rivers: combinedRivers(), reuse
     });
     return r.path ? segFromPath(r.path) : null;
   }
@@ -379,6 +379,96 @@ const Feat = (() => {
     return false;
   }
 
+  // ---------------- rede automática entre capital, cidades e castelos ----------------
+  // Árvore geradora mínima (menor soma de distâncias, crescendo a partir da capital) + alguns atalhos onde a
+  // volta pela rede seria mais que o dobro da linha reta. Cada ligação é roteada pelo relevo e as estradas já
+  // feitas ficam mais baratas, então as novas aproveitam os trechos existentes (troncos em comum).
+  // Vilas ficam de fora de propósito: são ligadas à mão.
+  const NET_TYPES = ['capital', 'cidade', 'castelo'];
+  let netBusy = false;
+  function netEdges(G) {
+    const n = G.length, D = (i, j) => Math.hypot(G[i].x - G[j].x, G[i].y - G[j].y);
+    const inT = new Uint8Array(n), best = new Float64Array(n).fill(Infinity), from = new Int32Array(n).fill(-1), edges = [];
+    best[0] = 0;
+    for (let k = 0; k < n; k++) {
+      let u = -1;
+      for (let i = 0; i < n; i++) if (!inT[i] && (u < 0 || best[i] < best[u])) u = i;
+      inT[u] = 1;
+      if (from[u] >= 0) edges.push([from[u], u]);
+      for (let i = 0; i < n; i++) if (!inT[i] && D(u, i) < best[i]) { best[i] = D(u, i); from[i] = u; }
+    }
+    if (n < 4) return edges;
+    // distância pela rede atual (Dijkstra simples: poucos nós)
+    const viaNet = (a, b) => {
+      const dist = new Float64Array(n).fill(Infinity), seen = new Uint8Array(n);
+      dist[a] = 0;
+      for (let k = 0; k < n; k++) {
+        let u = -1;
+        for (let i = 0; i < n; i++) if (!seen[i] && (u < 0 || dist[i] < dist[u])) u = i;
+        if (dist[u] === Infinity) break;
+        seen[u] = 1;
+        for (const [p, q] of edges) { const v = p === u ? q : q === u ? p : -1; if (v >= 0 && dist[u] + D(u, v) < dist[v]) dist[v] = dist[u] + D(u, v); }
+      }
+      return dist[b];
+    };
+    const med = edges.map(([a, b]) => D(a, b)).sort((a, b) => a - b)[edges.length >> 1];
+    for (let extra = 0; extra < Math.floor(n / 4); extra++) {
+      let pick = null, worst = 2;
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        if (D(i, j) > med * 1.5 || edges.some(([p, q]) => (p === i && q === j) || (p === j && q === i))) continue;
+        const ratio = viaNet(i, j) / D(i, j);
+        if (ratio > worst) { worst = ratio; pick = [i, j]; }
+      }
+      if (!pick) break;
+      edges.push(pick);
+    }
+    return edges;
+  }
+  async function autoNetwork() {
+    if (!S.H || netBusy) return;
+    const nodes = S.markers.filter((m) => NET_TYPES.includes(m.type));
+    const cap = nodes.findIndex((m) => m.type === 'capital');
+    if (cap > 0) nodes.unshift(nodes.splice(cap, 1)[0]); // a rede cresce a partir da capital
+    if (nodes.length < 2) { toast('Ponha pelo menos dois marcadores de Capital, Cidade ou Castelo para ligar com estradas.', true); return; }
+    const old = S.roads.filter((r) => r.auto);
+    if (old.length && !confirm(`Refazer a rede automática? As ${old.length} estrada(s) automáticas atuais serão trocadas (as feitas à mão ficam). Ctrl+Z desfaz.`)) return;
+    const edges = netEdges(nodes.map(uv2g));
+    netBusy = true;
+    snapshot(['roads']);
+    S.roads = S.roads.filter((r) => !r.auto);
+    const W = S.W, reuse = new Uint8Array(W * W);
+    const stamp = (seg) => {
+      const g = seg.map(uv2g);
+      for (let i = 0; i < g.length - 1; i++) {
+        const a = g[i], b = g[i + 1], k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 2));
+        for (let j = 0; j <= k; j++) {
+          const cx = Math.round(a.x + ((b.x - a.x) * j) / k), cy = Math.round(a.y + ((b.y - a.y) * j) / k);
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = cx + dx, y = cy + dy; if (x >= 0 && y >= 0 && x < W && y < W) reuse[y * W + x] = 1; }
+        }
+      }
+    };
+    for (const r of S.roads) r.segs.forEach(stamp);
+    let fail = 0;
+    try {
+      await flushCompose();
+      for (let k = 0; k < edges.length; k++) {
+        const a = nodes[edges[k][0]], b = nodes[edges[k][1]];
+        toast(`Traçando estradas: ${k + 1} de ${edges.length}…`);
+        const seg = await routeSeg({ u: a.u, v: a.v }, { u: b.u, v: b.v }, 'estrada', reuse);
+        if (!seg) { fail++; continue; }
+        stamp(seg);
+        S.roads.push({ id: ++S.featSeq, name: `${I18N.tr('Estrada')} ${a.name} – ${b.name}`, kind: 'estrada', width: ROAD_KINDS.estrada.width,
+          anchors: [{ u: a.u, v: a.v }, { u: b.u, v: b.v }], segs: [seg], auto: true });
+        render();
+      }
+    } catch (err) { showError(err); } finally { netBusy = false; }
+    S.featSel = null;
+    changed();
+    const made = S.roads.filter((r) => r.auto).length;
+    toast(`${made} estrada(s) ligando ${nodes.length} lugares` + (fail ? ` · ${fail} ligação(ões) sem caminho por terra (mar ou lago no meio)` : '') + '.');
+    setTimeout(() => autoBridgesFalls(false), 2500); // depois do aviso acima: marca as pontes das estradas novas
+  }
+
   // ---------------- pintura antiga → rios em linha / limpar manchinhas ----------------
   function convertPainted() {
     if (!S.H) return;
@@ -478,6 +568,8 @@ const Feat = (() => {
     };
     document.getElementById('btnRiverConvert').onclick = convertPainted;
     document.getElementById('btnRiverClean').onclick = cleanSpecks;
+    document.getElementById('btnRoadNet').onclick = autoNetwork;
+    document.getElementById('btnBridges').onclick = () => autoBridgesFalls();
   }
 
   // ---------------- teclado ----------------
@@ -501,6 +593,6 @@ const Feat = (() => {
   return {
     ROAD_KINDS, curve, riverSamples, riverRaster, riverGrid, roadGrid, roadsForEngine, combinedRivers, riverLengthM, roadLengthM, mPerCell,
     render, down, move, up, key, cancel, select, selected, buildList, syncOptions, bindOptions, serialize, load, deleteSelected, finishDraft,
-    convertPainted, cleanSpecks
+    convertPainted, cleanSpecks, autoNetwork
   };
 })();

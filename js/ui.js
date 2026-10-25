@@ -277,6 +277,8 @@ const UI = (() => {
         { label: 'Gerar montanhas e colinas', act: autoRelief },
         { label: 'Rios pintados → rios editáveis', act: () => { setTool('river'); Feat.convertPainted(); } },
         { label: 'Limpar manchinhas dos rios pintados', act: () => Feat.cleanSpecks() },
+        { label: 'Estradas entre capital, cidades e castelos', act: () => { setTool('road'); Feat.autoNetwork(); } },
+        { label: 'Marcar pontes e cachoeiras', act: () => autoBridgesFalls() },
         { label: 'Opções de geração…', act: () => showPanel('generate') },
         '-',
         { label: 'Aplicar erosão', act: runErosion }

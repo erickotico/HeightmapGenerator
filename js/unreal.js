@@ -115,7 +115,7 @@ const UE = {
 
   // Como usar a Data Table de marcadores, conforme o que a versão tem.
   markerUsage(v) {
-    const bp = 'Blueprint (qualquer versão): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor na Posicao (escolha a classe pelo Tipo).';
+    const bp = 'Blueprint (qualquer versão): Get Data Table Row Names → For Each → Get Data Table Row → Spawn Actor na Posicao e Rotacao (escolha a classe pelo Tipo).';
     if (v.pcgTable === 'yes') {
       return ['d) PCG: nó "Load Data Table" (Output Type = Point). Em Attribute Mapping, ligue "Posicao" a "$Position".',
         '   Cada marcador vira um ponto com os atributos Nome, Tipo e Regiao; filtre por Tipo e gere o que quiser.',
@@ -245,9 +245,10 @@ const UE = {
         step('Marcadores (pasta marcadores/) — ' + o.markers + ' ponto(s)'),
         '   ' + o.base + '_marcadores.csv: tabela para virar Data Table no Unreal.',
         '   a) Crie uma Structure (ex.: S_ForjaMarcador) com os campos, com estes nomes e tipos exatos:',
-        '        Nome (String) · Tipo (String) · Regiao (String) · Posicao (Vector)',
+        '        Nome (String) · Tipo (String) · Regiao (String) · Posicao (Vector) · Rotacao (Rotator) · Medida_m (Float)',
         '   b) Arraste o CSV para o Content Browser → Data Table → Row Structure = S_ForjaMarcador.',
         '   c) Posicao já está em cm, no mesmo sistema do Landscape (Z = altura do terreno no ponto).',
+        '      Pontes e cachoeiras automáticas: Rotacao = direção da estrada / do rio; Medida_m = vão da ponte ou altura da queda.',
         ...this.markerUsage(v).map((l) => '   ' + l),
         '   ' + o.base + '_marcadores.json: os mesmos dados em JSON (para ferramentas próprias).',
         ''
