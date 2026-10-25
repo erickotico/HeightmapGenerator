@@ -24,7 +24,10 @@ const UI = (() => {
     tree: 'M12 2l6 9h-3l4 6H5l4-6H6zM12 17v5',
     trees: 'M8 3l4.5 7h-2.5l3 5H3l3-5H3.5zM8 15v6M17 6l3.5 6h-2l2.5 4h-6M17 16v5',
     layers: 'M12 3l9 5-9 5-9-5zM3 12.5l9 5 9-5M3 17l9 5 9-5',
-    flag: 'M5 22V3M5 4h12l-2.5 4L17 12H5'
+    flag: 'M5 22V3M5 4h12l-2.5 4L17 12H5',
+    road: 'M8 2L4 22M16 2l4 20M12 3v3M12 10v4M12 18v3',
+    lake: 'M3 14c0-3.5 4-6 9-6s9 2.5 9 6-4 6-9 6-9-2.5-9-6zM7 14c1.5-1 3-1 4.5 0M12.5 16.5c1.5-1 3-1 4.5 0',
+    biome: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.5 10h5l2 3-1.5 4M14 3.5l-1 4 3 2 4.5-1M14 21v-4l3-2h3.5'
   };
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[n] || ICONS.brush}"/></svg>`;
 
@@ -43,15 +46,18 @@ const UI = (() => {
       { tool: 'paint', layer: 'sculpt', name: 'Elevar (m)', icon: 'raise' },
       { tool: 'erase', layer: 'sculpt', name: 'Rebaixar (m)', icon: 'lower' },
       { tool: 'level', layer: 'sculpt', name: 'Nivelar (altura exata)', key: 'N', icon: 'level' }] },
-    { id: 'river', items: [{ tool: 'river', name: 'Rio automático', key: 'V', icon: 'river' }] },
+    { id: 'river', items: [{ tool: 'river', name: 'Rio (linha editável)', key: 'V', icon: 'river' }] },
+    { id: 'lakes', items: [{ run: 'lakes', name: 'Lagos (pintar)', key: '7', icon: 'lake' }] },
+    { id: 'road', items: [{ tool: 'road', name: 'Estrada / trilha', key: 'T', icon: 'road' }] },
     { id: 'ruler', items: [{ tool: 'ruler', name: 'Régua', key: 'R', icon: 'ruler' }] },
     { id: 'marker', items: [
       { tool: 'marker', kind: 'build', name: 'Marcador de construção', key: 'M', icon: 'castle' },
       { tool: 'marker', kind: 'env', name: 'Marcador de vegetação / ambiente', icon: 'tree' }] },
-    { id: 'veg', kind: 'veg', name: 'Vegetação (áreas)', key: '9', icon: 'trees' },
+    { id: 'veg', kind: 'veg', name: 'Vegetação (áreas)', icon: 'trees' },
+    { id: 'biome', kind: 'biome', name: 'Biomas', icon: 'biome' },
     '-',
     { id: 'layer', kind: 'layer', name: 'Camada ativa', icon: 'layers' },
-    { id: 'regions', items: [{ run: 'regions', name: 'Regiões / Reinos', key: '8', icon: 'flag' }] }
+    { id: 'regions', items: [{ run: 'regions', name: 'Regiões / Reinos', key: '9', icon: 'flag' }] }
   ];
   GROUPS.forEach((g) => { if (g !== '-') g.cur = 0; });
   const PAINT_TOOLS = ['paint', 'erase', 'smooth', 'fill', 'pick', 'level'];
@@ -63,10 +69,12 @@ const UI = (() => {
     if (t === 'pan') return ['pan', 0];
     if (t === 'marker') return ['marker', S.markerKind === 'env' ? 1 : 0];
     if (S.active === 'veg' && (t === 'paint' || t === 'erase')) return ['veg', t === 'erase' ? VEG_TYPES.length : S.vegBrush - 1];
+    if (S.active === 'biome' && (t === 'paint' || t === 'erase')) return ['biome', t === 'erase' ? BIOMES.length : S.biomeBrush - 1];
     if (S.active === 'sculpt' && (t === 'paint' || t === 'erase' || t === 'level')) return ['sculpt', { paint: 0, erase: 1, level: 2 }[t]];
     if (t === 'paint' || t === 'erase' || t === 'smooth') return ['brush', { paint: 0, erase: 1, smooth: 2 }[t]];
     if (t === 'fill' || t === 'pick') return ['fill', t === 'fill' ? 0 : 1];
     if (t === 'river') return ['river', 0];
+    if (t === 'road') return ['road', 0];
     if (t === 'ruler') return ['ruler', 0];
     return [null, 0];
   }
@@ -75,10 +83,10 @@ const UI = (() => {
   function activate(g, idx) {
     const it = g.items[idx];
     g.cur = idx;
-    if (it.run === 'regions') {
-      setActive('regions');
+    if (it.run === 'regions' || it.run === 'lakes') {
+      setActive(it.run);
       if (!PAINT_TOOLS.includes(S.tool) || S.tool === 'level') setTool('paint');
-      showPanel('regions');
+      showPanel(it.run === 'lakes' ? 'paths' : 'regions');
     } else {
       if (it.layer === 'sculpt') { if (S.active !== 'sculpt') setActive('sculpt'); }
       else if ((g.id === 'brush' || g.id === 'fill') && S.active === 'sculpt' && it.tool !== 'pick') setActive(S.lastLayer || 'land');
@@ -109,6 +117,12 @@ const UI = (() => {
         `<button class="fi" data-v="${v.id}"><span class="ck">${cg === 'veg' && ci === i ? '■' : ''}</span><span class="vg">${vegGlyphSVG(v.id, 18)}</span><span class="lbl">${v.name}</span></button>`).join('') +
         `<button class="fi" data-v="0"><span class="ck">${cg === 'veg' && ci === VEG_TYPES.length ? '■' : ''}</span>${icon('eraser')}<span class="lbl">Apagar vegetação</span></button>`;
       el.querySelectorAll('.fi').forEach((b) => { b.onclick = () => { closeFly(); const v = +b.dataset.v; if (v) selectVeg(v, 'paint'); else selectVeg(S.vegBrush, 'erase'); }; });
+    } else if (g.kind === 'biome') {
+      const [cg, ci] = currentItem();
+      el.innerHTML = '<div class="fhead">Pintar biomas (máscara do material do terreno)</div>' + BIOMES.map((b, i) =>
+        `<button class="fi" data-b="${b.id}"><span class="ck">${cg === 'biome' && ci === i ? '■' : ''}</span><span class="sw" style="background:${b.color}"></span><span class="lbl">${b.name}</span><span class="key">${b.ch}</span></button>`).join('') +
+        `<button class="fi" data-b="0"><span class="ck">${cg === 'biome' && ci === BIOMES.length ? '■' : ''}</span>${icon('eraser')}<span class="lbl">Apagar (volta para campo)</span></button>`;
+      el.querySelectorAll('.fi').forEach((b) => { b.onclick = () => { closeFly(); const v = +b.dataset.b; if (v) selectBiome(v, 'paint'); else selectBiome(S.biomeBrush, 'erase'); }; });
     } else {
       const [cg, ci] = currentItem();
       el.innerHTML = g.items.map((it, i) =>
@@ -129,7 +143,7 @@ const UI = (() => {
       if (g === '-') { const s = document.createElement('div'); s.className = 'tbx-sep'; host.appendChild(s); continue; }
       const b = document.createElement('button');
       b.className = 'tbx'; b.dataset.g = g.id;
-      const multi = g.kind === 'layer' || g.kind === 'veg' || g.items.length > 1;
+      const multi = g.kind === 'layer' || g.kind === 'veg' || g.kind === 'biome' || g.items.length > 1;
       let hold = 0;
       b.addEventListener('pointerdown', (e) => {
         if (e.button !== 0 || !multi) return;
@@ -143,6 +157,7 @@ const UI = (() => {
         const r = b.getBoundingClientRect(), onTri = e.clientX > r.right - 11 && e.clientY > r.bottom - 11;
         if (g.kind === 'layer' || (multi && onTri)) openFly(g, b);
         else if (g.kind === 'veg') selectVeg(S.vegBrush, 'paint');
+        else if (g.kind === 'biome') { selectBiome(S.biomeBrush, 'paint'); showPanel('biomes'); }
         else activate(g, g.cur);
       };
       b.oncontextmenu = (e) => { e.preventDefault(); if (multi) openFly(g, b); };
@@ -151,26 +166,32 @@ const UI = (() => {
   }
   function syncToolbox() {
     const [cg, ci] = currentItem();
-    if (cg && cg !== 'veg') groupById(cg).cur = ci;
+    if (cg && cg !== 'veg' && cg !== 'biome') groupById(cg).cur = ci;
     for (const b of qa('#toolbox .tbx')) {
       const g = groupById(b.dataset.g);
       if (g.kind === 'layer') {
         const L = layerDef(S.active), col = isIdLayer(S.active) ? '#888' : `rgb(${L.color.join(',')})`;
         b.innerHTML = icon('layers') + `<span class="swl" style="background:${col}"></span><span class="tri"></span>`;
-        b.title = `Camada ativa: ${L.name} (1 a 7) — clique para trocar`;
+        b.title = `Camada ativa: ${L.name} (1 a 8) — clique para trocar`;
         b.classList.toggle('active', false);
         continue;
       }
       if (g.kind === 'veg') {
         b.innerHTML = icon('trees') + `<span class="swl" style="background:${VEG_TYPES[S.vegBrush - 1].color}"></span><span class="tri"></span>`;
-        b.title = `Vegetação (áreas): ${VEG_TYPES[S.vegBrush - 1].name} (9) — botão direito, segurar ou triângulo mostra os tipos`;
+        b.title = `Vegetação (áreas): ${VEG_TYPES[S.vegBrush - 1].name} — botão direito, segurar ou triângulo mostra os tipos`;
         b.classList.toggle('active', cg === 'veg');
+        continue;
+      }
+      if (g.kind === 'biome') {
+        b.innerHTML = icon('biome') + `<span class="swl" style="background:${BIOMES[S.biomeBrush - 1].color}"></span><span class="tri"></span>`;
+        b.title = `Biomas: ${BIOMES[S.biomeBrush - 1].name} — botão direito, segurar ou triângulo mostra os biomas`;
+        b.classList.toggle('active', cg === 'biome');
         continue;
       }
       const it = g.items[g.cur], multi = g.items.length > 1;
       b.innerHTML = icon(it.icon) + (multi ? '<span class="tri"></span>' : '');
       b.title = `${it.name}${it.key ? ` (${it.key})` : ''}${multi ? ' — botão direito, segurar ou clicar no triângulo mostra o grupo' : ''}`;
-      b.classList.toggle('active', g.id === 'regions' ? S.active === 'regions' : g.id === cg);
+      b.classList.toggle('active', g.id === 'regions' || g.id === 'lakes' ? S.active === g.id : g.id === cg);
     }
   }
 
@@ -178,7 +199,8 @@ const UI = (() => {
   function hintFor(t) {
     if (t === 'pick') return S.active === 'sculpt' ? 'Clique no mapa para pegar a altura (vai para o Nivelar).' : 'Clique na imagem-guia para escolher a cor (para Converter ou para o Balde).';
     if (t === 'ruler') return 'Arraste para medir distância, alturas, inclinação e tempo a pé. Esc apaga.';
-    if (t === 'river') return S.riverA ? 'Agora clique no destino (mar, lago ou outro rio). Esc cancela.' : 'Clique na nascente e depois no destino: o rio liga os dois pontos seguindo os vales. O Tamanho vira a largura na foz.';
+    if (t === 'river') return S.riverA ? 'Agora clique no destino (mar, lago ou outro rio). Esc cancela.' : 'Clique na nascente e depois no destino: o rio segue os vales. Arraste os pontos · 2 cliques na linha = ponto novo · Alt+clique apaga ponto · Delete apaga o rio.';
+    if (t === 'road') return S.roadDraft ? 'Clique no próximo ponto de passagem. Enter ou 2 cliques terminam · Esc termina/cancela.' : 'Clique nos pontos de passagem (cidades, pontes, passos): a rota segue o relevo. Arraste os pontos · Alt+clique apaga · Delete apaga a estrada.';
     if (t === 'pan') return 'Arraste para mover o mapa. Roda do mouse = zoom. F enquadra.';
     if (t === 'marker') return 'Clique para pôr; arraste para mover; Delete apaga o selecionado.';
     return '';
@@ -187,7 +209,7 @@ const UI = (() => {
     const t = S.tool, a = S.active, sculpt = a === 'sculpt', reg = isIdLayer(a);
     const stroke = ['paint', 'erase', 'smooth', 'level'].includes(t);
     const show = {
-      size: stroke || t === 'river',
+      size: stroke,
       strength: stroke && !reg,
       hardness: stroke,
       intensity: (t === 'paint' && !sculpt && !reg) || (t === 'fill' && !reg),
@@ -195,16 +217,19 @@ const UI = (() => {
       sculptTarget: t === 'level' || (t === 'pick' && sculpt),
       fill: t === 'fill',
       marker: t === 'marker',
+      river: t === 'river',
+      road: t === 'road',
       hint: !!hintFor(t)
     };
     for (const el of qa('#optbar [data-opt]')) el.hidden = !show[el.dataset.opt];
     q('#optHint').textContent = hintFor(t);
     const [cg, ci] = currentItem();
     if (cg === 'veg') q('#optTool').innerHTML = icon(t === 'erase' ? 'eraser' : 'trees') + `<span>${t === 'erase' ? 'Apagar vegetação' : 'Vegetação'}</span>`;
+    else if (cg === 'biome') q('#optTool').innerHTML = icon(t === 'erase' ? 'eraser' : 'biome') + `<span>${t === 'erase' ? 'Apagar bioma' : 'Biomas'}</span>`;
     else { const it = cg ? groupById(cg).items[ci] : null; q('#optTool').innerHTML = it ? icon(it.icon) + `<span>${it.name}</span>` : ''; }
-    const L = layerDef(a), veg = a === 'veg';
-    q('#optLayer .dot').style.background = veg ? VEG_TYPES[S.vegBrush - 1].color : reg ? 'conic-gradient(#e6194b 0 25%, #3cb44b 0 50%, #4363d8 0 75%, #f58231 0)' : `rgb(${L.color.join(',')})`;
-    q('#optLayer .nm').textContent = veg ? 'Vegetação · ' + VEG_TYPES[S.vegBrush - 1].name
+    const L = layerDef(a), veg = a === 'veg', bio = a === 'biome';
+    q('#optLayer .dot').style.background = veg ? VEG_TYPES[S.vegBrush - 1].color : bio ? BIOMES[S.biomeBrush - 1].color : reg ? 'conic-gradient(#e6194b 0 25%, #3cb44b 0 50%, #4363d8 0 75%, #f58231 0)' : `rgb(${L.color.join(',')})`;
+    q('#optLayer .nm').textContent = veg ? 'Vegetação · ' + VEG_TYPES[S.vegBrush - 1].name : bio ? 'Biomas · ' + BIOMES[S.biomeBrush - 1].name
       : reg ? 'Regiões / Reinos' + (S.regionDefs[S.regionBrush - 1] ? ' · ' + S.regionDefs[S.regionBrush - 1].name : '') : L.name;
     q('#optLayer').title = L.hint;
     // tipos de marcador da variante escolhida (construção ou vegetação/ambiente)
@@ -215,6 +240,7 @@ const UI = (() => {
       if (sel.dataset.kind !== S.markerKind) { sel.innerHTML = html; sel.dataset.kind = S.markerKind; }
       sel.value = S.markerType;
     }
+    if (t === 'river' || t === 'road') Feat.syncOptions();
   }
   function rememberMarkerType() { lastMarkerType[S.markerKind] = S.markerType; }
 
@@ -246,6 +272,8 @@ const UI = (() => {
         '-',
         { label: 'Gerar terra / mar', act: autoLand },
         { label: 'Gerar montanhas e colinas', act: autoRelief },
+        { label: 'Rios pintados → rios editáveis', act: () => { setTool('river'); Feat.convertPainted(); } },
+        { label: 'Limpar manchinhas dos rios pintados', act: () => Feat.cleanSpecks() },
         { label: 'Opções de geração…', act: () => showPanel('generate') },
         '-',
         { label: 'Aplicar erosão', act: runErosion }
@@ -322,9 +350,10 @@ const UI = (() => {
   function showShortcuts() {
     const rows = [
       ['H', 'Mover o mapa'], ['B / E / S', 'Pintar / Apagar / Suavizar'], ['G / I', 'Balde / Conta-gotas'], ['N', 'Nivelar (Esculpir)'],
-      ['V', 'Rio automático'], ['R', 'Régua'], ['M', 'Marcador'], ['1 a 7', 'Camada ativa (Terra … Esculpir)'], ['8', 'Regiões / Reinos'], ['9', 'Vegetação (áreas)'],
+      ['V', 'Rio (linha editável)'], ['T', 'Estrada / trilha'], ['R', 'Régua'], ['M', 'Marcador'], ['1 a 8', 'Camada ativa (Terra … Lagos, Esculpir)'], ['9', 'Regiões / Reinos'],
+      ['Enter', 'Terminar a estrada'], ['Alt+clique', 'Apagar um ponto do rio ou da estrada'],
       ['[ e ]', 'Diminuir / aumentar o pincel'], ['Shift', 'Inverte Pintar ↔ Apagar enquanto segura'], ['Espaço', 'Segure e arraste para mover'],
-      ['F', 'Enquadrar o mapa'], ['Delete', 'Apagar o marcador selecionado'], ['Esc', 'Apagar a régua / fechar menus'],
+      ['F', 'Enquadrar o mapa'], ['Delete', 'Apagar o marcador, rio ou estrada selecionado'], ['Esc', 'Apagar a régua / cancelar / fechar menus'],
       ['Ctrl+Z / Ctrl+Y', 'Desfazer / Refazer'], ['Ctrl+S', 'Salvar projeto']
     ];
     q('#modalBody').innerHTML = `<h2>Atalhos do teclado</h2><table class="kbd-table">${rows.map(([k, d]) => `<tr><td>${k}</td><td>${d}</td></tr>`).join('')}</table>
@@ -335,8 +364,8 @@ const UI = (() => {
   // ---------------- doca de painéis ----------------
   const LAYOUT_KEY = 'forja.layout.v1';
   const DEFAULT_LAYOUT = {
-    order: ['markers', 'veg', 'regions', 'guide', 'base', 'generate', 'erosion', 'terrain', 'export'],
-    collapsed: { guide: true, generate: true, erosion: true, terrain: true, export: true },
+    order: ['markers', 'paths', 'veg', 'biomes', 'regions', 'guide', 'base', 'generate', 'erosion', 'terrain', 'export'],
+    collapsed: { biomes: true, guide: true, generate: true, erosion: true, terrain: true, export: true },
     closed: {}, floating: {}, dockW: 310
   };
   let L = structuredClone(DEFAULT_LAYOUT);

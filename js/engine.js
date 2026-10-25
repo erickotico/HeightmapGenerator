@@ -105,7 +105,7 @@ function ForjaEngine() {
   function anyAbove(a, t) { for (let i = 0; i < a.length; i++) if (a[i] > t) return true; return false; }
 
   // ================= estado =================
-  const S = { W: 0, worldM: 0, cell: 0, fields: null, fieldsKey: '', base: null, eroded: null, P: null };
+  const S = { W: 0, worldM: 0, cell: 0, fields: null, fieldsKey: '', base: null, eroded: null, P: null, lakeLevel: null, roads: null, roadMask: null };
 
   function post(msg, transfer) { self.postMessage(msg, transfer || []); }
   function progress(label, value) { post({ type: 'progress', label, value }); }
@@ -179,8 +179,7 @@ function ForjaEngine() {
     }
 
     progress('Montando relevo', 0.7);
-    applyFlattenRivers(H, m, P);
-    if (m.sculpt) for (let i = 0; i < N; i++) H[i] += m.sculpt[i];
+    finishTerrain(H, m, P);
     return H;
   }
 
@@ -202,9 +201,18 @@ function ForjaEngine() {
       H[i] = hb + add * smoothstep(-1, 3, hb);
     }
     progress('Montando relevo', 0.7);
+    finishTerrain(H, m, P);
+    return H;
+  }
+
+  // Depois do relevo: aplainar e rios, esculpir, lagos e por último as estradas (que acompanham o resultado).
+  function finishTerrain(H, m, P) {
+    const N = S.W * S.W;
     applyFlattenRivers(H, m, P);
     if (m.sculpt) for (let i = 0; i < N; i++) H[i] += m.sculpt[i];
-    return H;
+    S.lakeLevel = m.lakes && anyAbove(m.lakes, 0.5) ? applyLakes(H, m.lakes, P) : null;
+    S.roads = m.roads && m.roads.length ? m.roads : null;
+    S.roadMask = S.roads ? applyRoads(H, S.roads) : null;
   }
 
   function applyFlattenRivers(H, m, P) {
@@ -215,9 +223,11 @@ function ForjaEngine() {
       const Hs = blur(H, W, px(P.flattenRadius));
       for (let i = 0; i < N; i++) H[i] += (Hs[i] - H[i]) * smooth01(fl[i] * 1.3);
     }
-    if (anyAbove(m.rivers, 0.01)) {
-      const R = blur(m.rivers, W, Math.max(1, px(P.riverWidth)));
-      const V = blur(m.rivers, W, px(P.valleyWidth));
+    let riv = m.rivers;
+    if (m.riverVec) { riv = Float32Array.from(m.rivers); for (let i = 0; i < N; i++) if (m.riverVec[i] > riv[i]) riv[i] = m.riverVec[i]; }
+    if (anyAbove(riv, 0.01)) {
+      const R = blur(riv, W, Math.max(1, px(P.riverWidth)));
+      const V = blur(riv, W, px(P.valleyWidth));
       const Hv = blur(H, W, px(P.valleyWidth));
       for (let i = 0; i < N; i++) {
         const v = smoothstep(0.02, 0.25, V[i]);
@@ -227,6 +237,193 @@ function ForjaEngine() {
         H[i] += (bed - H[i]) * r;
       }
     }
+  }
+
+  // ================= lagos =================
+  // Cada mancha pintada na camada Lagos vira um lago de água plana. Nível = ponto mais baixo da margem
+  // (o anel de fora da mancha) menos 30 cm, assim a água nunca vaza pela margem. O fundo é cavado em
+  // forma de bacia: raso perto da margem e P.lakeDepth metros abaixo do nível no meio.
+  // Devolve o nível da água por ponto (NaN fora dos lagos); lago que encosta no mar não ganha água própria.
+  function applyLakes(H, mask, P) {
+    const W = S.W, N = W * W, cell = S.cell, label = new Int32Array(N).fill(-1);
+    const level = new Float32Array(N).fill(NaN);
+    const shore = Math.max(2, 25 / cell); // em células: distância da margem até o fundo ficar com a profundidade total
+    for (let s0 = 0; s0 < N; s0++) {
+      if (mask[s0] <= 0.5 || label[s0] >= 0) continue;
+      const cells = [s0];
+      label[s0] = s0;
+      for (let k = 0; k < cells.length; k++) {
+        const c = cells[k], x = c % W, y = (c / W) | 0;
+        if (x > 0 && mask[c - 1] > 0.5 && label[c - 1] < 0) { label[c - 1] = s0; cells.push(c - 1); }
+        if (x < W - 1 && mask[c + 1] > 0.5 && label[c + 1] < 0) { label[c + 1] = s0; cells.push(c + 1); }
+        if (y > 0 && mask[c - W] > 0.5 && label[c - W] < 0) { label[c - W] = s0; cells.push(c - W); }
+        if (y < W - 1 && mask[c + W] > 0.5 && label[c + W] < 0) { label[c + W] = s0; cells.push(c + W); }
+      }
+      // margem = vizinhos de fora da mancha; depois a distância de cada ponto até a margem, por camadas
+      const dist = new Map(), ring = [], outer = new Map();
+      for (const c of cells) {
+        const x = c % W, y = (c / W) | 0;
+        let edge = x === 0 || y === 0 || x === W - 1 || y === W - 1;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
+          const n = ny * W + nx;
+          if (label[n] !== s0) { edge = true; outer.set(n, 1); }
+        }
+        if (edge) { dist.set(c, 0); ring.push(c); }
+      }
+      // Nível: a margem mais baixa, mas sem afundar o morro quando o lago foi pintado numa encosta —
+      // até 6 m acima dela (o quartil de baixo da margem); o lado baixo ganha uma beirada natural.
+      const shoreH = [...outer.keys()].map((n) => H[n]).sort((a, b) => a - b);
+      if (!shoreH.length || !(shoreH[0] > 0)) continue; // encosta no mar: é mar, não lago
+      const lv = Math.min(shoreH[Math.floor(shoreH.length * 0.25)], shoreH[0] + 6) - 0.3;
+      if (lv < 0.2) continue;
+      const rimW = Math.max(2, 15 / cell), top = lv + 0.4;
+      for (let frontier = [...outer.keys()], d = 1; frontier.length && d <= rimW; d++) {
+        const next = [];
+        for (const c of frontier) {
+          if (H[c] < 0) continue;
+          if (H[c] < top) H[c] += (top - H[c]) * (1 - smooth01((d - 1) / rimW));
+          for (const n of [c - 1, c + 1, c - W, c + W]) if (n >= 0 && n < N && label[n] !== s0 && !outer.has(n)) { outer.set(n, d + 1); next.push(n); }
+        }
+        frontier = next;
+      }
+      for (let k = 0; k < ring.length; k++) {
+        const c = ring[k], d = dist.get(c) + 1;
+        for (const n of [c - 1, c + 1, c - W, c + W]) if (n >= 0 && n < N && label[n] === s0 && !dist.has(n)) { dist.set(n, d); ring.push(n); }
+      }
+      for (const c of cells) {
+        const bed = lv - 0.5 - P.lakeDepth * smooth01(dist.get(c) / shore);
+        if (H[c] > bed) H[c] = bed;
+        level[c] = lv;
+      }
+    }
+    return level;
+  }
+
+  // ================= estradas =================
+  // Estrada = caminho na grade (traçado pela rota que evita subidas fortes). O terreno não é cortado reto:
+  // a altura alvo é o próprio relevo ao longo do caminho, suavizado (60 m estrada, 30 m trilha), e o terreno
+  // só é puxado para ela na largura da via, com um acostamento suave dos lados. Devolve a máscara da via.
+  function applyRoads(H, roads) {
+    const W = S.W, N = W * W, cell = S.cell;
+    const tgt = new Float32Array(N), wt = new Float32Array(N), dmin = new Float32Array(N).fill(Infinity);
+    for (const r of roads) {
+      const src = r.pts, n0 = src.length >> 1;
+      if (n0 < 2) continue;
+      // pontos a cada meia célula
+      const xs = [], ys = [];
+      for (let i = 0; i < n0 - 1; i++) {
+        const ax = src[2 * i], ay = src[2 * i + 1], bx = src[2 * i + 2], by = src[2 * i + 3];
+        const k = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
+        for (let j = 0; j < k; j++) { xs.push(ax + ((bx - ax) * j) / k); ys.push(ay + ((by - ay) * j) / k); }
+      }
+      xs.push(src[2 * n0 - 2]); ys.push(src[2 * n0 - 1]);
+      const n = xs.length, prof = new Float32Array(n);
+      for (let i = 0; i < n; i++) prof[i] = sampleH(H, W, xs[i], ys[i]);
+      const win = Math.max(1, Math.round((r.kind === 'trilha' ? 30 : 60) / (cell * 0.5)));
+      let a = prof;
+      for (let pass = 0; pass < 2; pass++) { // média móvel (duas passadas): tira os calombos, mantém a subida
+        const b = new Float32Array(n);
+        let acc = 0, cnt = 0;
+        for (let i = -win; i < n + win; i++) {
+          const add = i + win, rem = i - win - 1;
+          if (add >= 0 && add < n) { acc += a[add]; cnt++; }
+          if (rem >= 0 && rem < n) { acc -= a[rem]; cnt--; }
+          if (i >= 0 && i < n) b[i] = acc / cnt;
+        }
+        a = b;
+      }
+      const half = Math.max(0.5, r.width / 2 / cell), sh = Math.max(1.5, half * 1.5), R = half + sh;
+      for (let i = 0; i < n; i++) {
+        const cx = xs[i], cy = ys[i];
+        const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R));
+        const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(W - 1, Math.ceil(cy + R));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const d = Math.hypot(x - cx, y - cy);
+          if (d > R) continue;
+          const c = y * W + x, w = d <= half ? 1 : 1 - smooth01((d - half) / sh);
+          if (w > wt[c]) wt[c] = w;
+          if (d < dmin[c]) { dmin[c] = d; tgt[c] = a[i]; }
+        }
+      }
+    }
+    const mask = new Float32Array(N);
+    for (let c = 0; c < N; c++) {
+      if (!wt[c]) continue;
+      if (H[c] >= 0) H[c] += (tgt[c] - H[c]) * wt[c];
+      mask[c] = wt[c];
+    }
+    return mask;
+  }
+  function sampleH(H, W, x, y) {
+    const gx = clamp(x, 0, W - 1.001), gy = clamp(y, 0, W - 1.001), x0 = gx | 0, y0 = gy | 0, fx = gx - x0, fy = gy - y0, i = y0 * W + x0;
+    return (H[i] * (1 - fx) + H[i + 1] * fx) * (1 - fy) + (H[i + W] * (1 - fx) + H[i + W + 1] * fx) * fy;
+  }
+
+  // Rota de estrada de A até B (A* em 16 direções, para curvas suaves): custo = distância × (1 + 25 × rampa²),
+  // muito mais caro acima da rampa máxima (aí a rota faz zigue-zague como uma estrada de serra), atravessar
+  // rio custa uma ponte, e mar e lago não passam.
+  function roadRoute(H, W, cell, ax, ay, bx, by, o) {
+    const N = W * W, start = ay * W + ax, goal = by * W + bx;
+    const blocked = (i) => H[i] < 0 || (o.lakes && o.lakes[i] > 0.5);
+    const isRiver = (i) => o.rivers && o.rivers[i] > 0.5;
+    if (blocked(start) || blocked(goal)) return null;
+    const OFF = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1], [2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
+    const gmax = o.maxGrade, bridge = 40 * cell;
+    const g = new Float64Array(N).fill(Infinity), parent = new Int32Array(N).fill(-1), done = new Uint8Array(N);
+    let hk = new Float64Array(1024), hi = new Int32Array(1024), hn = 0;
+    const push = (k, i) => {
+      if (hn === hk.length) { const k2 = new Float64Array(hn * 2), i2 = new Int32Array(hn * 2); k2.set(hk); i2.set(hi); hk = k2; hi = i2; }
+      let c = hn++;
+      while (c > 0) { const p = (c - 1) >> 1; if (hk[p] <= k) break; hk[c] = hk[p]; hi[c] = hi[p]; c = p; }
+      hk[c] = k; hi[c] = i;
+    };
+    const pop = () => {
+      const top = hi[0], lk = hk[--hn], li = hi[hn];
+      let c = 0;
+      for (;;) {
+        let ch = 2 * c + 1;
+        if (ch >= hn) break;
+        if (ch + 1 < hn && hk[ch + 1] < hk[ch]) ch++;
+        if (hk[ch] >= lk) break;
+        hk[c] = hk[ch]; hi[c] = hi[ch]; c = ch;
+      }
+      hk[c] = lk; hi[c] = li;
+      return top;
+    };
+    const heur = (i) => Math.hypot((i % W) - bx, ((i / W) | 0) - by) * cell;
+    g[start] = 0; push(heur(start), start);
+    let found = false, visited = 0;
+    while (hn) {
+      const c = pop();
+      if (done[c]) continue;
+      done[c] = 1;
+      if (c === goal) { found = true; break; }
+      if ((++visited & 65535) === 0) progress('Traçando a estrada', Math.min(0.99, visited / N));
+      const x = c % W, y = (c / W) | 0, hc = H[c], rc = isRiver(c);
+      for (const [dx, dy] of OFF) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
+        const nb = ny * W + nx;
+        if (done[nb] || blocked(nb)) continue;
+        // passo de cavalo: as duas células do meio também precisam ser passáveis
+        if ((Math.abs(dx) === 2 || Math.abs(dy) === 2) && (blocked(y * W + x + Math.sign(dx)) || blocked((y + Math.sign(dy)) * W + x))) continue;
+        const len = Math.hypot(dx, dy) * cell, grade = Math.abs(H[nb] - hc) / len, over = Math.max(0, grade - gmax);
+        let cost = len * (1 + 25 * grade * grade + 4000 * over * over);
+        if (!rc && isRiver(nb)) cost += bridge;
+        const ng = g[c] + cost;
+        if (ng < g[nb]) { g[nb] = ng; parent[nb] = c; push(ng + heur(nb), nb); }
+      }
+    }
+    progress('', 1);
+    if (!found) return null;
+    const chain = [];
+    for (let c = goal; c !== -1; c = parent[c]) chain.push(c);
+    chain.reverse();
+    const out = new Int32Array(chain.length * 2);
+    chain.forEach((c, k) => { out[2 * k] = c % W; out[2 * k + 1] = (c / W) | 0; });
+    return out;
   }
 
   // ================= erosão =================
@@ -350,7 +547,7 @@ function ForjaEngine() {
     }
   }
 
-  function colorize(H, W, cell, P, mode) {
+  function colorize(H, W, cell, P, mode, lakeLevel) {
     const out = new Uint8ClampedArray(W * W * 4);
     let mn = Infinity, mx = -Infinity, land = 0;
     for (let i = 0; i < H.length; i++) { const v = H[i]; if (v < mn) mn = v; if (v > mx) mx = v; if (v > 0) land++; }
@@ -377,10 +574,10 @@ function ForjaEngine() {
         } else if (mode === 'slope') {
           const t = clamp(slope / 50, 0, 1);
           r = 60 + 195 * Math.min(1, t * 2); g = 190 - 150 * Math.max(0, t * 2 - 1); b = 70;
-          if (h < 0) { r = 40; g = 70; b = 120; }
+          if (h < 0 || (lakeLevel && h < lakeLevel[i])) { r = 40; g = 70; b = 120; }
           r *= shade; g *= shade; b *= shade;
         } else if (mode === 'layers') {
-          if (h < 0) { r = 40; g = 80; b = 140; }
+          if (h < 0 || (lakeLevel && h < lakeLevel[i])) { r = 40; g = 80; b = 140; }
           else {
             layerWeights(h, slope, P, w);
             r = w[0] * 70 + w[1] * 128 + w[2] * 222 + w[3] * 245;
@@ -389,7 +586,10 @@ function ForjaEngine() {
           }
           r *= shade; g *= shade; b *= shade;
         } else { // relevo
-          if (h < 0) {
+          if (lakeLevel && h < lakeLevel[i]) {
+            const t = smooth01((lakeLevel[i] - h) / Math.max(1, P.lakeDepth || 8));
+            r = 96 + (40 - 96) * t; g = 170 + (100 - 170) * t; b = 200 + (150 - 200) * t;
+          } else if (h < 0) {
             const t = smooth01(-h / Math.max(1, P.oceanDepth));
             r = 88 + (18 - 88) * t; g = 170 + (52 - 170) * t; b = 205 + (105 - 205) * t;
             const s2 = 0.8 + 0.25 * (shade - 0.35);
@@ -412,9 +612,9 @@ function ForjaEngine() {
 
   function reply(id, extra) {
     const H = current();
-    const col = colorize(H, S.W, S.cell, S.P, extra.mode || 'relief');
-    const Hc = Float32Array.from(H);
-    post({ type: 'height', id, H: Hc, rgba: col.rgba, stats: col.stats, eroded: !!S.eroded, W: S.W }, [Hc.buffer, col.rgba.buffer]);
+    const col = colorize(H, S.W, S.cell, S.P, extra.mode || 'relief', S.lakeLevel);
+    const Hc = Float32Array.from(H), lk = S.lakeLevel ? Float32Array.from(S.lakeLevel) : null;
+    post({ type: 'height', id, H: Hc, rgba: col.rgba, stats: col.stats, eroded: !!S.eroded, W: S.W, lakeLevel: lk }, lk ? [Hc.buffer, col.rgba.buffer, lk.buffer] : [Hc.buffer, col.rgba.buffer]);
   }
 
   // ================= geração automática =================
@@ -596,7 +796,10 @@ function ForjaEngine() {
           const c = xi[b + q];
           s += xw[b + q] * (wy[0] * src[r0 + c] + wy[1] * src[r1 + c] + wy[2] * src[r2 + c] + wy[3] * src[r3 + c]);
         }
-        if (n) s += fbm(n, clamp(gx0 + x, 0, R - 1) * cellT * inv, ym, 3) * o.detailAmp * smoothstep(-2, 4, s);
+        if (n) {
+          const road = S.roadMask ? 1 - sampleH(S.roadMask, W, clamp(gx0 + x, 0, R - 1) * k, v) : 1;
+          if (road > 0) s += fbm(n, clamp(gx0 + x, 0, R - 1) * cellT * inv, ym, 3) * o.detailAmp * smoothstep(-2, 4, s) * road;
+        }
         out[row + x] = s;
       }
     }
@@ -859,6 +1062,7 @@ function ForjaEngine() {
         const H = Float32Array.from(S.base);
         erodeHydraulic(H, S.W, S.P, S.P.seed | 0);
         if (S.P.thIters > 0) erodeThermal(H, S.W, S.cell, Math.round(S.P.thIters), S.P.thTalus);
+        if (S.roads) applyRoads(H, S.roads);
         S.eroded = H;
         reply(m.id, m);
       } else if (m.type === 'recolor') {
@@ -875,6 +1079,10 @@ function ForjaEngine() {
         if (!S.base) throw new Error('Gere o terreno primeiro.');
         const r = riverLink(current(), S.W, S.cell, m.ax, m.ay, m.bx, m.by, m.rivers);
         post({ type: 'river', id: m.id, path: r ? r.path : null, climb: r ? r.climb : 0 }, r ? [r.path.buffer] : []);
+      } else if (m.type === 'roadRoute') {
+        if (!S.base) throw new Error('Gere o terreno primeiro.');
+        const path = roadRoute(current(), S.W, S.cell, m.ax, m.ay, m.bx, m.by, m);
+        post({ type: 'road', id: m.id, path }, path ? [path.buffer] : []);
       } else if (m.type === 'export') {
         S.P = m.P;
         if (!S.base) throw new Error('Gere o terreno antes de exportar.');
@@ -882,6 +1090,7 @@ function ForjaEngine() {
           const H = Float32Array.from(S.base);
           erodeHydraulic(H, S.W, S.P, S.P.seed | 0);
           if (S.P.thIters > 0) erodeThermal(H, S.W, S.cell, Math.round(S.P.thIters), S.P.thTalus);
+          if (S.roads) applyRoads(H, S.roads);
           S.eroded = H;
         }
         const r = await doExport(m);

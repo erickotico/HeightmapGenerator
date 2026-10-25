@@ -18,16 +18,25 @@ const LAYERS = [
   { id: 'hills', name: 'Colinas', color: [226, 196, 70], hint: 'Relevo ondulado de altura média.' },
   { id: 'plateau', name: 'Planaltos', color: [176, 96, 214], hint: 'Áreas altas e planas com bordas íngremes (mesas).' },
   { id: 'flatten', name: 'Aplainar', color: [70, 205, 225], hint: 'Deixa o terreno plano: cidades, castelos, campos de batalha.' },
-  { id: 'rivers', name: 'Rios', color: [50, 120, 255], hint: 'Pincel fino, da montanha até o mar. Cava o leito e abre um vale suave.' },
+  { id: 'rivers', name: 'Rios (pintura)', color: [50, 120, 255], hint: 'Pincel fino, da montanha até o mar. Cava o leito e abre um vale suave. Para rios editáveis use a ferramenta Rio (V).' },
+  { id: 'lakes', name: 'Lagos', color: [40, 190, 235], hint: 'Pinte o formato do lago. A água fica plana na altura da margem mais baixa e o fundo é cavado (Ajustes → Profundidade dos lagos).' },
   { id: 'sculpt', name: 'Esculpir (m)', kind: 'meters', color: [230, 90, 70], hint: 'Ajuste fino em metros, somado por cima de tudo: Pintar = Elevar, Apagar = Rebaixar, Nivelar = altura exata. O Conta-gotas pega a altura do mapa.' },
   { id: 'regions', name: 'Regiões / Reinos', kind: 'id', hint: 'Não muda o relevo. Vira máscara para o PCG (vegetação, spawns e masmorras por reino).' },
-  { id: 'veg', name: 'Vegetação', kind: 'id', color: [63, 125, 53], hint: 'Áreas de vegetação: cada ponto guarda um tipo (floresta, pinheiros, selva…). Não muda o relevo; vira máscara para o PCG espalhar as plantas.' }
+  { id: 'veg', name: 'Vegetação', kind: 'id', color: [63, 125, 53], hint: 'Áreas de vegetação: cada ponto guarda um tipo (floresta, pinheiros, selva…). Não muda o relevo; vira máscara para o PCG espalhar as plantas.' },
+  { id: 'biome', name: 'Biomas', kind: 'id', color: [224, 180, 90], hint: 'Bioma de cada lugar (deserto, floresta, gelo, vulcânico; o resto é campo). Não muda o relevo: vira a máscara de biomas do material do terreno.' }
 ];
 const FLOAT_LAYERS = LAYERS.filter((l) => !l.kind).map((l) => l.id); // máscaras 0..1
 const layerDef = (id) => LAYERS.find((l) => l.id === id);
 // camadas de "id por pixel" (não mudam o relevo): regiões e vegetação
-const isIdLayer = (id) => id === 'regions' || id === 'veg';
-const idBrush = () => (S.active === 'veg' ? S.vegBrush : S.regionBrush);
+const isIdLayer = (id) => id === 'regions' || id === 'veg' || id === 'biome';
+const idBrush = () => (S.active === 'veg' ? S.vegBrush : S.active === 'biome' ? S.biomeBrush : S.regionBrush);
+// Biomas: canal da máscara exportada (R, G, B, A) = mesmo formato da máscara de biomas do material do terreno.
+const BIOMES = [
+  { id: 1, key: 'deserto', name: 'Deserto', color: '#e0b45a', ch: 'R' },
+  { id: 2, key: 'floresta', name: 'Floresta', color: '#2f7d3a', ch: 'G' },
+  { id: 3, key: 'gelo', name: 'Gelo / neve', color: '#dceaf5', ch: 'B' },
+  { id: 4, key: 'vulcanico', name: 'Vulcânico', color: '#5b4945', ch: 'A' }
+];
 const REGION_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000'];
 
 const PARAM_GROUPS = [
@@ -62,6 +71,7 @@ const PARAM_GROUPS = [
     { k: 'riverDepth', label: 'Profundidade do leito', def: 6, min: 0, max: 40, step: 0.5, unit: 'm' },
     { k: 'riverWidth', label: 'Largura do leito', def: 20, min: 5, max: 200, step: 1, unit: 'm' },
     { k: 'valleyWidth', label: 'Largura do vale', def: 250, min: 20, max: 1500, step: 10, unit: 'm' },
+    { k: 'lakeDepth', label: 'Profundidade dos lagos', def: 8, min: 0, max: 60, step: 0.5, unit: 'm', tip: 'Quanto o fundo do lago fica abaixo da água, no meio. Perto da margem é raso.' },
     { k: 'flattenRadius', label: 'Raio do aplainar', def: 300, min: 20, max: 2000, step: 10, unit: 'm', tip: 'Quanto maior, mais plano fica onde você pintou Aplainar.' }
   ] },
   { title: 'Aspecto natural', items: [
@@ -99,11 +109,14 @@ const S = {
   markers: [], markerSel: null, markerSeq: 0, markerType: 'cidade', markerKind: 'build', // build = construção · env = vegetação/ambiente
   regionDefs: [], regionBrush: 1,
   veg: null, vegBrush: 1, showVeg: true, // vegetação: 0 = nada, 1..8 = VEG_TYPES
+  biome: null, biomeBrush: 1, // biomas: 0 = campo, 1..4 = BIOMES
+  vrivers: [], roads: [], featSeq: 0, featSel: null, roadDraft: null, // rios em linha e estradas (js/features.js)
+  riverDef: { w0: 6, w1: 24 }, roadDef: { kind: 'estrada', width: 6 }, lakeLevel: null,
   active: 'land', lastLayer: 'land', tool: 'paint', // lastLayer: volta para ela ao sair do Esculpir pelo Pincel
   brush: { size: 60, strength: 0.35, hardness: 0.4, intensity: 1 },
   fillTol: 25, overlayAlpha: 0.55,
   P: { ...DEFAULT_P },
-  ex: { name: 'MeuMundo', ue: UE.DEFAULT_VERSION, res: 4033, mpq: 2, detail: 1.2, erode: true, layers: true, regions: true, veg: true, r16: false, markers: true, rivers: true, map: true, mapSize: 2048 },
+  ex: { name: 'MeuMundo', ue: UE.DEFAULT_VERSION, res: 4033, mpq: 2, detail: 1.2, erode: true, layers: true, regions: true, veg: true, r16: false, markers: true, rivers: true, lakes: true, roads: true, biomes: true, map: true, mapSize: 2048 },
   guide: { dataURL: null, img: null, fit: 'contain', opacity: 0.5, visible: true, pixels: null, pick: null },
   H: null, stats: null, eroded: false, erosionStale: false,
   display: 'relief', view: { s: 1, tx: 0, ty: 0 }, mode: '2d',
@@ -112,13 +125,17 @@ const S = {
 const worldM = () => (S.ex.res - 1) * S.ex.mpq;
 const cellM = () => worldM() / S.W;
 // 'base' (heightmap importado) também entra no desfazer; pode ser null.
-const getArr = (id) => (id === 'regions' ? S.regions : id === 'veg' ? S.veg : id === 'base' ? S.base : id === 'sculpt' ? S.sculpt : id === 'markers' ? S.markers : S.masks[id]);
+const getArr = (id) => (id === 'regions' ? S.regions : id === 'veg' ? S.veg : id === 'biome' ? S.biome : id === 'base' ? S.base : id === 'sculpt' ? S.sculpt
+  : id === 'markers' ? S.markers : id === 'vrivers' ? S.vrivers : id === 'roads' ? S.roads : S.masks[id]);
+const isListUndo = (id) => id === 'markers' || id === 'vrivers' || id === 'roads'; // listas: desfazer guarda uma cópia
 const setArr = (id, a) => {
   if (id === 'regions') S.regions = a;
   else if (id === 'veg') { S.veg = a; scheduleVegDraw(); }
   else if (id === 'base') { S.base = a; updateBasePanel(); }
   else if (id === 'sculpt') S.sculpt = a;
   else if (id === 'markers') { S.markers = a; renderMarkers(); buildMarkerList(); }
+  else if (id === 'biome') S.biome = a;
+  else if (id === 'vrivers' || id === 'roads') { S[id] = a; S.featSel = null; Feat.buildList(); Feat.render(); }
   else S.masks[id] = a;
 };
 
@@ -187,7 +204,7 @@ function applyView() {
   stage.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
   const pix = v.s >= 1.5 ? 'pixelated' : 'auto';
   for (const c of [cvT, cvG, cvO]) c.style.imageRendering = pix;
-  updateCursorSize(); renderRuler(); renderMarkers(); renderRiverPick(); updateScaleBar();
+  updateCursorSize(); renderRuler(); renderMarkers(); Feat.render(); updateScaleBar();
 }
 function fitView() {
   const r = vp.getBoundingClientRect();
@@ -209,7 +226,7 @@ function drawOverlay(x0 = 0, y0 = 0, x1 = S.W - 1, y1 = S.W - 1) {
   const img = octx.createImageData(w, h), d = img.data;
   const a = S.overlayAlpha * 255;
   if (isIdLayer(S.active)) {
-    const cols = S.active === 'veg' ? VEG_TYPES.map((v) => hexToRgb(v.color)) : S.regionDefs.map((r) => hexToRgb(r.color));
+    const cols = (S.active === 'veg' ? VEG_TYPES : S.active === 'biome' ? BIOMES : S.regionDefs).map((r) => hexToRgb(r.color));
     const arr = getArr(S.active);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const id = arr[(y + y0) * W + x + x0];
@@ -275,7 +292,7 @@ function effectiveTool(shift) {
 
 function snapshot(ids) {
   const e = {};
-  for (const id of ids) { const a = getArr(id); e[id] = id === 'markers' ? structuredClone(a) : a ? a.slice() : null; }
+  for (const id of ids) { const a = getArr(id); e[id] = isListUndo(id) ? structuredClone(a) : a ? a.slice() : null; }
   S.undo.push(e);
   if (S.undo.length > 30) S.undo.shift();
   S.redo.length = 0;
@@ -294,8 +311,9 @@ function undoRedo(from, to) {
 // Apaga o mapa inteiro de uma vez (todas as camadas, regiões e heightmap base), com desfazer.
 // Mantém imagem-guia, nomes/cores das regiões e ajustes — para recomeçar do zero total existe o "Novo".
 function clearAll() {
-  if (!confirm('Apagar tudo do mapa (terra, relevo, rios, esculpir, regiões, vegetação, marcadores e heightmap base)?\nA imagem-guia e os ajustes ficam. Dá para desfazer com Ctrl+Z.')) return;
-  snapshot([...FLOAT_LAYERS, 'sculpt', 'regions', 'veg', 'base', 'markers']);
+  if (!confirm('Apagar tudo do mapa (terra, relevo, rios, lagos, estradas, esculpir, regiões, vegetação, biomas, marcadores e heightmap base)?\nA imagem-guia e os ajustes ficam. Dá para desfazer com Ctrl+Z.')) return;
+  snapshot([...FLOAT_LAYERS, 'sculpt', 'regions', 'veg', 'biome', 'base', 'markers', 'vrivers', 'roads']);
+  S.biome.fill(0); S.vrivers = []; S.roads = []; S.featSel = null; Feat.buildList(); Feat.render();
   for (const id of FLOAT_LAYERS) S.masks[id].fill(0);
   S.sculpt.fill(0);
   S.regions.fill(0);
@@ -361,7 +379,6 @@ function startTool(p, shift) {
     return;
   }
   if (tool === 'ruler') { S.ruler = { a: p, b: p, drag: true }; renderRuler(); return; }
-  if (tool === 'river') { riverClick(p); return; }
   if (tool === 'fill') {
     if (!inside) return;
     if (S.active === 'sculpt') { toast('O Balde não funciona na camada Esculpir. Use Elevar, Rebaixar ou Nivelar.'); return; }
@@ -448,7 +465,7 @@ function pickGuideColor(x, y) {
 // ================= cursor e leitura =================
 function updateCursorSize() {
   const t = S.tool;
-  const cross = (t === 'pick' || t === 'fill' || t === 'ruler' || t === 'river' || t === 'marker') && !spaceDown;
+  const cross = (t === 'pick' || t === 'fill' || t === 'ruler' || t === 'river' || t === 'road' || t === 'marker') && !spaceDown;
   cursorEl.classList.toggle('cross', cross);
   if (!cross) { const d = S.brush.size * S.view.s; cursorEl.style.width = cursorEl.style.height = d + 'px'; }
   else { cursorEl.style.width = cursorEl.style.height = ''; }
@@ -479,7 +496,11 @@ vp.addEventListener('pointerdown', (e) => {
     cursorEl.style.display = 'none';
     return;
   }
-  if (e.button === 0) { if (S.tool === 'marker') markerDown(toMap(e), e); else startTool(toMap(e), e.shiftKey); }
+  if (e.button === 0) {
+    if (S.tool === 'marker') markerDown(toMap(e), e);
+    else if (S.tool === 'river' || S.tool === 'road') Feat.down(toMap(e), e);
+    else startTool(toMap(e), e.shiftKey);
+  }
 });
 vp.addEventListener('pointermove', (e) => {
   lastPointer = e;
@@ -493,6 +514,7 @@ vp.addEventListener('pointermove', (e) => {
   if (stroke) strokeTo(p);
   if (S.ruler && S.ruler.drag) { S.ruler.b = p; renderRuler(); }
   if (markerDrag) markerMove(p);
+  if (S.tool === 'river' || S.tool === 'road') Feat.move(p, e);
   updateReadout(p);
 });
 vp.addEventListener('pointerup', () => {
@@ -500,6 +522,7 @@ vp.addEventListener('pointerup', () => {
   if (stroke) endStroke();
   if (S.ruler) S.ruler.drag = false;
   if (markerDrag) markerUp();
+  Feat.up();
 });
 vp.addEventListener('pointerleave', () => { if (!stroke && !pan) cursorEl.style.display = 'none'; });
 vp.addEventListener('pointerenter', () => { cursorEl.style.display = S.tool === 'pan' ? 'none' : 'block'; });
@@ -534,7 +557,8 @@ async function composeLoop() {
     do {
       composeAgain = false;
       const base = S.base ? { data: S.base, min: S.baseInfo.min, max: S.baseInfo.max } : null;
-      const r = await call('compose', { W: S.W, worldM: worldM(), P: S.P, masks: { ...S.masks, sculpt: S.sculpt }, base, mode: S.display });
+      const masks = { ...S.masks, sculpt: S.sculpt, riverVec: S.vrivers.length ? Feat.riverRaster() : null, roads: Feat.roadsForEngine() };
+      const r = await call('compose', { W: S.W, worldM: worldM(), P: S.P, masks, base, mode: S.display });
       applyHeight(r);
     } while (composeAgain);
   } catch (err) { showError(err); } finally { composing = null; }
@@ -561,7 +585,7 @@ async function runErosion() {
 let view3dDirty = true;
 function applyHeight(r) {
   if (r.W !== S.W) return; // resultado antigo de outra resolução
-  S.H = r.H; S.stats = r.stats; S.eroded = r.eroded;
+  S.H = r.H; S.stats = r.stats; S.eroded = r.eroded; S.lakeLevel = r.lakeLevel || null;
   tctx.putImageData(new ImageData(r.rgba, r.W, r.W), 0, 0);
   updateStats(); updateErosionInfo(); renderRuler();
   if (S.markers.length && !markerDrag) buildMarkerList(); // altura de cada marcador muda com o relevo
@@ -606,7 +630,7 @@ function setActive(id) {
   S.active = id;
   if (id !== 'sculpt') S.lastLayer = id;
   if (id !== 'sculpt' && S.tool === 'level') setTool('paint');
-  buildRegionList(); buildVegList();
+  buildRegionList(); buildVegList(); buildBiomeList();
   UI.sync();
   drawOverlay();
 }
@@ -741,7 +765,7 @@ function buildExportPanel() {
   $('#exMpq').value = String(S.ex.mpq);
   $('#exName').value = S.ex.name;
   $('#exErode').checked = S.ex.erode; $('#exLayers').checked = S.ex.layers; $('#exRegions').checked = S.ex.regions; $('#exR16').checked = S.ex.r16;
-  $('#exMarkers').checked = S.ex.markers; $('#exRivers').checked = S.ex.rivers !== false; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize);
+  $('#exMarkers').checked = S.ex.markers; $('#exRivers').checked = S.ex.rivers !== false; $('#exLakes').checked = S.ex.lakes !== false; $('#exRoads').checked = S.ex.roads !== false; $('#exBiomes').checked = S.ex.biomes !== false; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize);
   updateWorldSize();
 }
 function updateWorldSize() {
@@ -792,8 +816,9 @@ function bindControls() {
   $('#exRes').onchange = (e) => { S.ex.res = +e.target.value; updateWorldSize(); updateStats(); markDirty(); scheduleCompose(0); };
   $('#exMpq').onchange = (e) => { S.ex.mpq = +e.target.value; updateWorldSize(); updateStats(); markDirty(); scheduleCompose(0); };
   $('#exName').onchange = (e) => { S.ex.name = e.target.value.trim() || 'MeuMundo'; e.target.value = S.ex.name; markDirty(); };
-  for (const [id, key] of [['exErode', 'erode'], ['exLayers', 'layers'], ['exRegions', 'regions'], ['exVeg', 'veg'], ['exR16', 'r16'], ['exMarkers', 'markers'], ['exRivers', 'rivers'], ['exMap', 'map']]) $('#' + id).onchange = (e) => { S.ex[key] = e.target.checked; };
+  for (const [id, key] of [['exErode', 'erode'], ['exLayers', 'layers'], ['exRegions', 'regions'], ['exVeg', 'veg'], ['exR16', 'r16'], ['exMarkers', 'markers'], ['exRivers', 'rivers'], ['exLakes', 'lakes'], ['exRoads', 'roads'], ['exBiomes', 'biomes'], ['exMap', 'map']]) $('#' + id).onchange = (e) => { S.ex[key] = e.target.checked; };
   $('#vegShow').onchange = (e) => { S.showVeg = e.target.checked; scheduleVegDraw(); };
+  $('#btnBiomeFromVeg').onclick = biomesFromVeg;
   $('#btnExport').onclick = doExport;
   $('#btnGuide').onclick = openGuide;
   $('#modalClose').onclick = () => { $('#modal').hidden = true; };
@@ -823,12 +848,15 @@ function setTool(t) {
   if (t === 'level' && S.active !== 'sculpt') setActive('sculpt');
   if (t === 'river' && S.active !== 'rivers') setActive('rivers');
   if (t !== 'ruler' && S.ruler) { S.ruler = null; renderRuler(); }
-  if (t !== 'river' && S.riverA) { S.riverA = null; renderRiverPick(); }
+  if (t !== 'river' && S.riverA) S.riverA = null;
+  if (t !== 'road' && S.roadDraft) Feat.finishDraft();
+  if ((t === 'river' || t === 'road') && S.featSel && S.featSel.kind !== t) S.featSel = null;
   S.tool = t;
   vp.classList.toggle('pan-tool', t === 'pan');
   UI.sync();
   buildMarkerPalette();
   updateCursorSize();
+  Feat.render();
 }
 
 function setMode(m) {
@@ -867,6 +895,7 @@ function changeWorkRes(B) {
   for (const id of FLOAT_LAYERS) S.masks[id] = resampleF(S.masks[id], A, B);
   S.regions = resampleN(S.regions, A, B);
   S.veg = resampleN(S.veg, A, B);
+  S.biome = resampleN(S.biome, A, B);
   if (S.base) S.base = resampleF(S.base, A, B);
   S.sculpt = resampleF(S.sculpt, A, B);
   S.ruler = null;
@@ -1138,13 +1167,13 @@ function removeBase() {
 // ================= projeto: salvar / abrir / automático =================
 async function serializeProject() {
   const header = {
-    format: 'forja-mundos', version: 5, W: S.W, base: S.base ? S.baseInfo : null, sculpt: true, veg: true, markers: S.markers, markerSeq: S.markerSeq, P: S.P, ex: S.ex, regionDefs: S.regionDefs, layers: FLOAT_LAYERS,
+    format: 'forja-mundos', version: 6, W: S.W, base: S.base ? S.baseInfo : null, sculpt: true, veg: true, biome: true, ...Feat.serialize(), markers: S.markers, markerSeq: S.markerSeq, P: S.P, ex: S.ex, regionDefs: S.regionDefs, layers: FLOAT_LAYERS,
     guide: S.guide.dataURL ? { dataURL: S.guide.dataURL, fit: S.guide.fit, opacity: S.guide.opacity, visible: S.guide.visible } : null,
     savedAt: new Date().toISOString()
   };
   const hb = new TextEncoder().encode(JSON.stringify(header));
   const N = S.W * S.W;
-  const body = new Uint8Array(4 + hb.length + N * (FLOAT_LAYERS.length + 1) + (S.base ? N * 2 : 0) + N * 4 + N);
+  const body = new Uint8Array(4 + hb.length + N * (FLOAT_LAYERS.length + 1) + (S.base ? N * 2 : 0) + N * 4 + N + N);
   new DataView(body.buffer).setUint32(0, hb.length, true);
   body.set(hb, 4);
   let off = 4 + hb.length;
@@ -1164,6 +1193,8 @@ async function serializeProject() {
   body.set(new Uint8Array(S.sculpt.buffer, S.sculpt.byteOffset, N * 4), off);
   off += N * 4;
   body.set(S.veg, off); // v5: vegetação (1 byte por ponto)
+  off += N;
+  body.set(S.biome, off); // v6: biomas (1 byte por ponto)
   return new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
 }
 async function deserializeProject(blob) {
@@ -1191,6 +1222,9 @@ async function deserializeProject(blob) {
   S.sculpt = header.sculpt ? new Float32Array(buf.slice(off, off + N * 4).buffer) : new Float32Array(N);
   if (header.sculpt) off += N * 4;
   S.veg = header.veg ? buf.slice(off, off + N) : new Uint8Array(N);
+  if (header.veg) off += N;
+  S.biome = header.biome ? buf.slice(off, off + N) : new Uint8Array(N);
+  Feat.load(header);
   S.P = { ...DEFAULT_P, ...header.P };
   S.ex = { ...S.ex, ...header.ex };
   S.regionDefs = header.regionDefs || [];
@@ -1256,6 +1290,8 @@ async function newProject(ask = true) {
   S.regions = new Uint8Array(S.W * S.W);
   S.sculpt = new Float32Array(S.W * S.W);
   S.veg = new Uint8Array(S.W * S.W); scheduleVegDraw(); buildVegList();
+  S.biome = new Uint8Array(S.W * S.W); buildBiomeList();
+  Feat.load({});
   S.ruler = null;
   S.markers = []; S.markerSel = null; S.markerSeq = 0; renderMarkers(); buildMarkerList();
   S.regionDefs = [1, 2, 3, 4].map((n) => ({ name: `Região ${n}`, color: REGION_COLORS[n - 1] }));
@@ -1286,8 +1322,18 @@ async function doExport() {
       extraFiles.push({ name: 'marcadores/' + base + '_marcadores.csv', blob: new Blob(['\ufeff' + markersCSV()], { type: 'text/csv' }) });
       extraFiles.push({ name: 'marcadores/' + base + '_marcadores.json', blob: new Blob([markersJSON()], { type: 'application/json' }) });
     }
-    const rivers = S.ex.rivers !== false ? riverLines() : [];
+    const rivers = S.ex.rivers !== false ? riverExport() : [];
     if (rivers.length) extraFiles.push({ name: 'rios/' + base + '_rios.json', blob: new Blob([riversJSON(rivers)], { type: 'application/json' }) });
+    const lakes = S.ex.lakes !== false ? lakeOutlines() : [];
+    if (lakes.length) extraFiles.push({ name: 'lagos/' + base + '_lagos.json', blob: new Blob([lakesJSON(lakes)], { type: 'application/json' }) });
+    const roads = S.ex.roads !== false ? S.roads.filter((r) => r.segs.length) : [];
+    if (roads.length) extraFiles.push({ name: 'estradas/' + base + '_estradas.json', blob: new Blob([roadsJSON()], { type: 'application/json' }) });
+    let biomeNames = [];
+    if (S.ex.biomes !== false) {
+      const bf = await biomeExportFiles(base);
+      extraFiles.push(...bf);
+      biomeNames = BIOMES.filter((b) => S.biome.some((x) => x === b.id)).map((b) => b.name);
+    }
     let vegNames = [];
     if (S.ex.veg !== false) {
       busyCount++; setTask('Gravando máscaras de vegetação…', null);
@@ -1302,7 +1348,7 @@ async function doExport() {
       } finally { busyCount--; setTask('', null); }
     }
     const half = ((res - 1) / 2) * mpq * 100;
-    const tpl = UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, veg: vegNames });
+    const tpl = UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, lakes: lakes.length, roads: roads.length, biomes: biomeNames, veg: vegNames });
     const r = await call('export', {
       P: S.P, erode: S.ex.erode, res, worldM: worldM(), detailAmp: S.ex.detail, detailWave: 40,
       r16: S.ex.r16, layers: S.ex.layers, regions: S.ex.regions, regionMasks: S.ex.regions,
@@ -1496,59 +1542,6 @@ function updateScaleBar() {
   if (!best) best = 1e6;
   $('#scaleBarLine').style.width = best / mpp + 'px';
   $('#scaleBarText').textContent = best >= 1000 ? fmt(best / 1000) + ' km' : fmt(best) + ' m';
-}
-
-// ================= rio entre dois pontos =================
-// 1º clique = nascente, 2º clique = destino (mar, lago, outro rio…). O motor liga os dois pelos vales.
-function riverClick(p) {
-  const W = S.W, x = Math.floor(p.x), y = Math.floor(p.y);
-  if (x < 0 || y < 0 || x >= W || y >= W || !S.H) return;
-  if (!S.riverA) { S.riverA = { x, y }; renderRiverPick(); UI.sync(); toast('Nascente marcada. Agora clique no destino (mar, lago ou outro rio). Esc cancela.'); return; }
-  const a = S.riverA;
-  S.riverA = null; renderRiverPick(); UI.sync();
-  if (a.x === x && a.y === y) return;
-  linkRiver(a, { x, y });
-}
-async function linkRiver(a, b) {
-  try {
-    await flushCompose();
-    const r = await call('riverLink', { ax: a.x, ay: a.y, bx: b.x, by: b.y, rivers: S.masks.rivers });
-    if (!r.path) { toast('Não achei um caminho entre esses dois pontos.'); return; }
-    snapshot(['rivers']);
-    const km = paintRiverPath(r.path);
-    afterMaskChange('rivers');
-    toast(`Rio traçado: ${fmt(km, 1)} km.` + (r.climb > 5 ? ` Atenção: o caminho sobe ${fmt(r.climb, 0)} m no total (o leito cava o terreno ali). Para um rio natural, ponha a nascente no ponto mais alto.` : ''), r.climb > 5);
-  } catch (err) { showError(err); }
-}
-const riverSvg = $('#riverSvg');
-function renderRiverPick() {
-  const a = S.riverA;
-  if (!a || S.mode !== '2d') { riverSvg.setAttribute('hidden', ''); return; }
-  riverSvg.removeAttribute('hidden');
-  const p = mapToScreen({ x: a.x + 0.5, y: a.y + 0.5 });
-  riverSvg.innerHTML = `<circle cx="${p.x}" cy="${p.y}" r="7" fill="#3278ff" stroke="#fff" stroke-width="2"/><text class="rl-text" x="${p.x + 12}" y="${p.y + 4}" style="paint-order:stroke;stroke:#000;stroke-width:3px">Nascente — clique no destino</text>`;
-}
-// Suaviza o caminho (pixels em escada) e pinta na camada Rios, mais fino na nascente e largo na foz.
-function paintRiverPath(path) {
-  const n = path.length / 2, pts = [];
-  for (let i = 0; i < n; i++) {
-    let sx = 0, sy = 0, c = 0;
-    for (let k = Math.max(0, i - 3); k <= Math.min(n - 1, i + 3); k++) { sx += path[k * 2]; sy += path[k * 2 + 1]; c++; }
-    pts.push({ x: sx / c + 0.5, y: sy / c + 0.5 });
-  }
-  const saved = { active: S.active, b: { ...S.brush } };
-  S.active = 'rivers';
-  Object.assign(S.brush, { strength: 1, hardness: 0.6, intensity: 1 });
-  const w1 = Math.max(2, saved.b.size), w0 = Math.max(1.5, w1 * 0.35);
-  let lenPx = 0, acc = Infinity;
-  for (let i = 0; i < n; i++) {
-    if (i) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); lenPx += d; acc += d; }
-    S.brush.size = w0 + ((w1 - w0) * i) / Math.max(1, n - 1);
-    if (acc >= Math.max(1, S.brush.size * 0.2) || i === n - 1) { dab(pts[i].x, pts[i].y, 'paint'); acc = 0; }
-  }
-  S.active = saved.active; Object.assign(S.brush, saved.b);
-  flushOverlay();
-  return (lenPx * cellM()) / 1000;
 }
 
 // ================= modelos de mundo =================
@@ -1816,28 +1809,185 @@ function markersJSON() {
   }, null, 2);
 }
 
-// ================= rios (traçado para a engine) =================
-// O eixo de cada rio sai da camada Rios (js/rivers.js). Trechos curtos (manchas de pintura) ficam de fora.
-// Z = fundo do leito no terreno de trabalho, só uma estimativa: a engine mede o terreno de verdade.
+// ================= rios, lagos e estradas (arquivos para a engine) =================
+// Rios em linha saem exatos (curva com a largura de cada ponto). A camada Rios pintada continua valendo:
+// o eixo de cada rio pintado é extraído (js/rivers.js) e trechos curtos (manchas de pintura) ficam de fora.
+// Z = altura no terreno de trabalho, só uma estimativa: a engine mede o terreno de verdade.
 const RIVER_MIN_M = 150, RIVER_STEP_M = 30, RIVER_BRIDGE_M = 12; // falhas de até ~2× isso viram o mesmo rio
 const gridM = () => worldM() / (S.W - 1); // metros entre dois pontos da grade (mesma conta dos marcadores)
-function riverLines() {
-  if (!S.H || !S.masks.rivers.some((v) => v > 0.5)) return [];
-  const g = gridM();
-  return Rivers.extract(S.masks.rivers, S.H, S.W, { minLen: RIVER_MIN_M / g, step: Math.max(1, RIVER_STEP_M / g), bridge: Math.max(1, RIVER_BRIDGE_M / g) });
+const gridToCm = (x, y) => { const span = (S.ex.res - 1) * S.ex.mpq * 100; return { x: +((x / (S.W - 1) - 0.5) * span).toFixed(1), y: +((y / (S.W - 1) - 0.5) * span).toFixed(1) }; };
+function riverExport() {
+  if (!S.H) return [];
+  const g = gridM(), out = [];
+  const seaAt = (p) => (heightAtMap(p.x, p.y) ?? 1) < 0;
+  for (const r of S.vrivers) {
+    const smp = Feat.riverSamples(r, Math.max(1, RIVER_STEP_M / g));
+    if (smp.length < 2) continue;
+    out.push({ nome: r.name, foz: seaAt(smp[smp.length - 1]) ? 'mar' : 'terra', comprimento_m: Math.round(Feat.riverLengthM(r)),
+      pontos: smp.map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((p.w + S.P.riverWidth) * 100) })) });
+  }
+  if (S.masks.rivers.some((v) => v > 0.5)) {
+    // pintura menos o que já é rio em linha (senão o mesmo rio sairia duas vezes)
+    const m = Float32Array.from(S.masks.rivers);
+    if (S.vrivers.length) { const v = Feat.riverRaster(); for (let i = 0; i < m.length; i++) if (v[i] > 0.2) m[i] = 0; }
+    const lines = Rivers.extract(m, S.H, S.W, { minLen: RIVER_MIN_M / g, step: Math.max(1, RIVER_STEP_M / g), bridge: Math.max(1, RIVER_BRIDGE_M / g) });
+    for (const ln of lines) {
+      out.push({ nome: '', foz: ln.mouth ? 'mar' : 'terra', comprimento_m: Math.round(Rivers.length(ln.pts) * g),
+        pontos: ln.pts.map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((2 * p.r * g + S.P.riverWidth) * 100) })) });
+    }
+  }
+  out.forEach((r, k) => { if (!r.nome) r.nome = 'Rio ' + String(k + 1).padStart(2, '0'); });
+  return out;
 }
-function riversJSON(lines) {
-  const W = S.W, span = (S.ex.res - 1) * S.ex.mpq * 100, gm = gridM();
+function riversJSON(rivers) {
+  return JSON.stringify({ mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0, profundidadeLeito_m: S.P.riverDepth, rios: rivers }, null, 1);
+}
+
+// Contorno de cada lago (borda dos pontos com água), já simplificado, e o nível da água.
+function lakeOutlines() {
+  const L = S.lakeLevel, W = S.W, N = W * W;
+  if (!L) return [];
+  const lab = new Int32Array(N).fill(-1), lakes = [];
+  for (let s0 = 0; s0 < N; s0++) {
+    if (isNaN(L[s0]) || lab[s0] >= 0) continue;
+    const id = lakes.length, cells = [s0];
+    lab[s0] = id;
+    for (let k = 0; k < cells.length; k++) {
+      const c = cells[k], x = c % W, y = (c / W) | 0;
+      for (const n of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < W - 1 ? c + W : -1]) if (n >= 0 && !isNaN(L[n]) && lab[n] < 0) { lab[n] = id; cells.push(n); }
+    }
+    lakes.push({ level: L[s0], cells: cells.length, edges: new Map() });
+  }
+  // arestas entre ponto com água e ponto sem (cantos dos pixels), ligadas em voltas fechadas
+  const inLake = (x, y, id) => x >= 0 && y >= 0 && x < W && y < W && lab[y * W + x] === id;
+  const key = (x, y) => y * (W + 1) + x;
+  for (let c = 0; c < N; c++) {
+    const id = lab[c];
+    if (id < 0) continue;
+    const x = c % W, y = (c / W) | 0, E = lakes[id].edges;
+    if (!inLake(x, y - 1, id)) E.set(key(x + 1, y), key(x, y));
+    if (!inLake(x + 1, y, id)) E.set(key(x + 1, y + 1), key(x + 1, y));
+    if (!inLake(x, y + 1, id)) E.set(key(x, y + 1), key(x + 1, y + 1));
+    if (!inLake(x - 1, y, id)) E.set(key(x, y), key(x, y + 1));
+  }
+  const out = [], g = gridM();
+  for (const lk of lakes) {
+    if (lk.cells * g * g < 400) continue; // menos de 400 m²: só uma poça
+    let best = null, bestA = 0;
+    const E = lk.edges;
+    while (E.size) {
+      const [k0] = E.keys(), loop = [];
+      let k = k0;
+      while (E.has(k)) { const nk = E.get(k); E.delete(k); loop.push({ x: (k % (W + 1)) - 0.5, y: Math.floor(k / (W + 1)) - 0.5 }); k = nk; }
+      let a = 0;
+      for (let i = 0; i < loop.length; i++) { const p = loop[i], q = loop[(i + 1) % loop.length]; a += p.x * q.y - q.x * p.y; }
+      if (Math.abs(a) > bestA) { bestA = Math.abs(a); best = loop; }
+    }
+    if (!best || best.length < 4) continue;
+    out.push({ level: lk.level, area: lk.cells * g * g, pts: simplifyRing(best, 0.7) });
+  }
+  return out;
+}
+// Douglas-Peucker num anel fechado (corta no ponto mais longe do primeiro)
+function simplifyRing(pts, eps) {
+  let far = 0, fd = 0;
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[0].x, pts[i].y - pts[0].y); if (d > fd) { fd = d; far = i; } }
+  const dp = (a) => {
+    const keep = new Uint8Array(a.length); keep[0] = keep[a.length - 1] = 1;
+    const st = [[0, a.length - 1]];
+    while (st.length) {
+      const [i0, i1] = st.pop(), A = a[i0], B = a[i1], dx = B.x - A.x, dy = B.y - A.y, Lh = Math.hypot(dx, dy) || 1;
+      let md = 0, mi = -1;
+      for (let i = i0 + 1; i < i1; i++) { const d = Math.abs((a[i].x - A.x) * dy - (a[i].y - A.y) * dx) / Lh; if (d > md) { md = d; mi = i; } }
+      if (md > eps) { keep[mi] = 1; st.push([i0, mi], [mi, i1]); }
+    }
+    return a.filter((_, i) => keep[i]);
+  };
+  const h1 = dp(pts.slice(0, far + 1)), h2 = dp(pts.slice(far).concat([pts[0]]));
+  return h1.slice(0, -1).concat(h2.slice(0, -1));
+}
+function lakesJSON(lakes) {
   return JSON.stringify({
-    mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0, profundidadeLeito_m: S.P.riverDepth,
-    rios: lines.map((r, k) => ({
-      nome: 'Rio ' + String(k + 1).padStart(2, '0'), foz: r.mouth ? 'mar' : 'terra', comprimento_m: Math.round(Rivers.length(r.pts) * gm),
-      pontos: r.pts.map((p) => ({
-        x: +((p.x / (W - 1) - 0.5) * span).toFixed(1), y: +((p.y / (W - 1) - 0.5) * span).toFixed(1),
-        z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((2 * p.r * gm + S.P.riverWidth) * 100)
-      }))
+    mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0,
+    lagos: lakes.map((l, k) => ({ nome: 'Lago ' + String(k + 1).padStart(2, '0'), nivel: +(l.level * 100).toFixed(1), area_m2: Math.round(l.area), contorno: l.pts.map((p) => gridToCm(p.x, p.y)) }))
+  }, null, 1);
+}
+function roadsJSON() {
+  return JSON.stringify({
+    mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0,
+    estradas: S.roads.filter((r) => r.segs.length).map((r) => ({
+      nome: r.name, tipo: (Feat.ROAD_KINDS[r.kind] || Feat.ROAD_KINDS.estrada).name, largura: Math.round(r.width * 100), comprimento_m: Math.round(Feat.roadLengthM(r)),
+      pontos: Feat.roadGrid(r).map((p) => ({ ...gridToCm(p.x, p.y), z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1) }))
     }))
   }, null, 1);
+}
+
+// ================= biomas =================
+function buildBiomeList() {
+  const el = $('#biomeList');
+  if (!el || !S.biome) return;
+  const c = new Array(BIOMES.length + 1).fill(0);
+  for (let i = 0; i < S.biome.length; i++) c[S.biome[i]]++;
+  const N = S.biome.length;
+  el.innerHTML = BIOMES.map((b) => `<div class="veg-row${S.active === 'biome' && S.biomeBrush === b.id ? ' active' : ''}" data-b="${b.id}"><span class="bio-sw" style="background:${b.color}"></span><span class="nm">${b.name} <small>(canal ${b.ch})</small></span><span class="pc">${c[b.id] ? fmt((c[b.id] / N) * 100, 1) + '%' : '—'}</span></div>`).join('');
+  el.querySelectorAll('.veg-row').forEach((r) => { r.onclick = () => selectBiome(+r.dataset.b); });
+}
+function selectBiome(id, tool = 'paint') {
+  S.biomeBrush = id;
+  if (S.active !== 'biome') setActive('biome');
+  if (!['paint', 'erase', 'fill', 'smooth'].includes(S.tool) || S.tool !== tool) setTool(tool);
+  buildBiomeList(); UI.sync();
+}
+// floresta/pinheiros/selva → Floresta; oásis e cactos → Deserto (só onde ainda não tem bioma)
+function biomesFromVeg() {
+  const map = { 1: 2, 2: 2, 3: 2, 7: 1, 8: 1 };
+  snapshot(['biome']);
+  let n = 0;
+  for (let i = 0; i < S.biome.length; i++) { const b = map[S.veg[i]]; if (b && !S.biome[i]) { S.biome[i] = b; n++; } }
+  if (!n) { S.undo.pop(); toast('Nenhuma área de floresta, selva, pinheiros, oásis ou cactos pintada na Vegetação.'); return; }
+  afterMaskChange('biome'); buildBiomeList();
+  toast('Biomas preenchidos a partir da vegetação. Ctrl+Z desfaz.');
+}
+// PNG RGBA de 8 bits feito à mão: o canvas pré-multiplica o alfa e estragaria os canais R, G e B onde A = 0.
+async function encodePNGRGBA(w, h, rgba) {
+  const raw = new Uint8Array(h * (w * 4 + 1));
+  for (let y = 0; y < h; y++) raw.set(rgba.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
+  const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+  const crcT = encodePNGRGBA.t || (encodePNGRGBA.t = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })());
+  const chunk = (type, data) => {
+    const o = new Uint8Array(12 + data.length), dv = new DataView(o.buffer);
+    dv.setUint32(0, data.length); o.set(new TextEncoder().encode(type), 4); o.set(data, 8);
+    let c = 0xFFFFFFFF; for (let i = 4; i < 8 + data.length; i++) c = crcT[(c ^ o[i]) & 255] ^ (c >>> 8);
+    dv.setUint32(8 + data.length, (c ^ 0xFFFFFFFF) >>> 0);
+    return o;
+  };
+  const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
+  dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 6;
+  return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', z), chunk('IEND', new Uint8Array(0))], { type: 'image/png' });
+}
+// Máscara de biomas: R = deserto, G = floresta, B = gelo/neve, A = vulcânico (bordas suaves), mundo inteiro.
+async function biomeExportFiles(base) {
+  const used = BIOMES.filter((b) => S.biome.some((x) => x === b.id));
+  if (!used.length) return [];
+  const W = S.W, out = Math.min(2048, Math.max(1024, W * 2));
+  const src = document.createElement('canvas'); src.width = src.height = W;
+  const sctx = src.getContext('2d'), img = sctx.createImageData(W, W), d = img.data;
+  const big = document.createElement('canvas'); big.width = big.height = out;
+  const bctx = big.getContext('2d', { willReadFrequently: true });
+  const rgba = new Uint8Array(out * out * 4), blur = Math.max(1, Math.round(out / 512));
+  for (const b of used) {
+    const ch = 'RGBA'.indexOf(b.ch);
+    for (let i = 0; i < S.biome.length; i++) { const on = S.biome[i] === b.id ? 255 : 0; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = on; d[i * 4 + 3] = 255; }
+    sctx.putImageData(img, 0, 0);
+    bctx.filter = `blur(${blur}px)`; bctx.fillStyle = '#000'; bctx.fillRect(0, 0, out, out); bctx.drawImage(src, 0, 0, out, out); bctx.filter = 'none';
+    const px = bctx.getImageData(0, 0, out, out).data;
+    for (let i = 0; i < out * out; i++) rgba[i * 4 + ch] = px[i * 4];
+  }
+  const legend = { mundo: S.ex.name, resolucao: out, cobreOMundoInteiro: true, centro: [0, 0], campo: 'onde nenhum canal está ligado', canais: BIOMES.map((b) => ({ canal: b.ch, chave: b.key, nome: b.name, usado: used.includes(b) })) };
+  return [
+    { name: 'biomas/' + base + '_biomas.png', blob: await encodePNGRGBA(out, out, rgba) },
+    { name: 'biomas/' + base + '_biomas.json', blob: new Blob([JSON.stringify(legend, null, 2)], { type: 'application/json' }) }
+  ];
 }
 
 // ================= vegetação (áreas) =================
@@ -1981,16 +2131,35 @@ function bilinear(A, W, x, y) {
 }
 const MAPC = { low: [233, 222, 186], mid: [214, 196, 150], high: [172, 152, 116], snow: [246, 244, 238], shallow: [178, 206, 206], deep: [100, 138, 156], coast: [88, 66, 40], river: [72, 114, 156], border: [140, 40, 40] };
 const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+// tom de cada bioma no mapa ilustrado: [cor, quanto mistura]
+const BIOME_TINT = [null, [[240, 190, 100], 0.6], [[120, 150, 92], 0.3], [[246, 246, 244], 0.65], [[96, 82, 76], 0.5]];
+// estradas no mapa ilustrado: contorno claro + traço (trilha tracejada)
+function drawRoads(ctx, size, u) {
+  const k = (size - 1) / (S.W - 1);
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const r of S.roads) {
+    const g = Feat.roadGrid(r);
+    if (g.length < 2) continue;
+    const trail = r.kind === 'trilha';
+    ctx.beginPath(); g.forEach((p, i) => (i ? ctx.lineTo(p.x * k, p.y * k) : ctx.moveTo(p.x * k, p.y * k)));
+    ctx.setLineDash([]); ctx.strokeStyle = 'rgba(240,230,200,.8)'; ctx.lineWidth = (trail ? 2.6 : 3.8) * u; ctx.stroke();
+    ctx.setLineDash(trail ? [4 * u, 3 * u] : []); ctx.strokeStyle = trail ? '#8a5f32' : '#7a4a22'; ctx.lineWidth = (trail ? 1.2 : 2) * u; ctx.stroke();
+  }
+  ctx.restore();
+}
 function renderGameMap(size, labeled) {
   const W = S.W, P = S.P, c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d'), img = ctx.createImageData(size, size), d = img.data;
   const k = (W - 1) / (size - 1), hs = new Float32Array(size * size), rv = new Float32Array(size * size), rid = new Uint8Array(size * size);
+  const lake = new Float32Array(size * size), bio = new Uint8Array(size * size), rivAll = S.vrivers.length ? Feat.combinedRivers() : S.masks.rivers;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const i = y * size + x;
+    const i = y * size + x, ni = Math.round(y * k) * W + Math.round(x * k);
     hs[i] = bilinear(S.H, W, x * k, y * k);
-    rv[i] = bilinear(S.masks.rivers, W, x * k, y * k);
-    rid[i] = S.regions[Math.round(y * k) * W + Math.round(x * k)];
+    rv[i] = bilinear(rivAll, W, x * k, y * k);
+    rid[i] = S.regions[ni];
+    lake[i] = S.lakeLevel ? S.lakeLevel[ni] : NaN;
+    bio[i] = S.biome ? S.biome[ni] : 0;
   }
   const mpp = worldM() / (size - 1), zf = 2.5, snow = Math.max(P.snowLine, 50);
   let lx = -1, ly = -1, lz = 1.4; { const l = Math.hypot(lx, ly, lz); lx /= l; ly /= l; lz /= l; }
@@ -2004,10 +2173,12 @@ function renderGameMap(size, labeled) {
       let col;
       const land = h >= 0;
       if (!land) col = mix3(MAPC.shallow, MAPC.deep, smooth01(-h / Math.max(1, P.oceanDepth)));
+      else if (h < lake[i]) col = mix3(MAPC.river, MAPC.deep, 0.2);
       else {
         const t = h / snow;
         col = t < 0.35 ? mix3(MAPC.low, MAPC.mid, t / 0.35) : mix3(MAPC.mid, MAPC.high, Math.min(1, (t - 0.35) / 0.5));
         col = mix3(col, MAPC.snow, smooth01((h - snow * 0.95) / (snow * 0.1)));
+        if (bio[i]) col = mix3(col, BIOME_TINT[bio[i]][0], BIOME_TINT[bio[i]][1]);
         col = col.map((v) => v * shade);
         if (rv[i] > 0.3) col = mix3(col, MAPC.river, smooth01((rv[i] - 0.3) / 0.25));
       }
@@ -2022,7 +2193,8 @@ function renderGameMap(size, labeled) {
   ctx.putImageData(img, 0, 0);
   const u = size / 1024, serif = 'Georgia, "Times New Roman", serif';
   // vegetação pintada vira arvorezinhas (também no minimapa limpo: não é texto)
-  if (S.veg && S.veg.some((v) => v)) drawVegGlyphs(ctx, size, (ix) => S.H[ix] >= 0);
+  if (S.veg && S.veg.some((v) => v)) drawVegGlyphs(ctx, size, (ix) => S.H[ix] >= 0 && !(S.H[ix] < (S.lakeLevel ? S.lakeLevel[ix] : NaN)));
+  drawRoads(ctx, size, u);
   if (labeled) {
     // nomes dos reinos no centro de cada região
     const sum = new Map();
@@ -2107,11 +2279,11 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key === ' ') { spaceDown = true; e.preventDefault(); updateCursorSize(); return; }
   const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= LAYERS.length) { setActive(LAYERS[n - 1].id); return; }
+  if (n >= 1 && n <= 9) { setActive(LAYERS[n - 1].id); return; }
   if (e.key === 'Escape' && S.ruler) { S.ruler = null; renderRuler(); return; }
-  if (e.key === 'Escape' && S.riverA) { S.riverA = null; renderRiverPick(); UI.sync(); return; }
+  if (Feat.key(e)) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.markerSel != null) { e.preventDefault(); deleteMarker(S.markerSel); return; }
-  const tools = { h: 'pan', b: 'paint', e: 'erase', s: 'smooth', g: 'fill', i: 'pick', n: 'level', v: 'river', r: 'ruler', m: 'marker' };
+  const tools = { h: 'pan', b: 'paint', e: 'erase', s: 'smooth', g: 'fill', i: 'pick', n: 'level', v: 'river', t: 'road', r: 'ruler', m: 'marker' };
   const k = e.key.toLowerCase();
   // o Balde não funciona no Esculpir: volta para a última camada comum
   if (tools[k]) { if (k === 'g' && S.active === 'sculpt') setActive(S.lastLayer || 'land'); setTool(tools[k]); return; }
@@ -2129,8 +2301,10 @@ window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false
   S.regions = new Uint8Array(S.W * S.W);
   S.sculpt = new Float32Array(S.W * S.W);
   S.veg = new Uint8Array(S.W * S.W);
+  S.biome = new Uint8Array(S.W * S.W);
   setupCanvases();
   UI.init();
+  Feat.bindOptions();
   buildPresets();
   try { const ue = localStorage.getItem('forja.ue'); if (ue) S.ex.ue = UE.version(ue).id; } catch (e) { /* sem localStorage: fica o padrão */ }
   buildParams(); buildExportPanel(); bindControls(); setActive('land'); setTool('paint'); updateGuideUI(); updateErosionInfo();

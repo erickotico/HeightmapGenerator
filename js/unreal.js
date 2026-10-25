@@ -254,12 +254,37 @@ const UE = {
       ] : []),
       ...(o.rivers ? [
         step('Rios (pasta rios/) — ' + o.rivers + ' rio(s)'),
-        '   ' + o.base + '_rios.json: o eixo de cada rio da camada Rios, da nascente para a foz, em cm (centro em X = 0 / Y = 0).',
-        '   Cada ponto tem x, y, z (fundo do leito, estimado) e largura (cm). Trechos com menos de 150 m ficam de fora.',
+        '   ' + o.base + '_rios.json: o eixo de cada rio (rios em linha e camada Rios pintada), da nascente para a foz, em cm (centro em X = 0 / Y = 0).',
+        '   Cada ponto tem x, y, z (fundo do leito, estimado) e largura (cm). Rios pintados com menos de 150 m ficam de fora.',
         ...(v.engine === 5 ? [
           '   Plugin Water: um Water Body River por rio, com estes pontos na spline e "Affects Landscape" desligado',
           '   (o leito já está cavado no terreno). Ponha a água entre o fundo e as margens medidas no Landscape.'
         ] : ['   Use os pontos como spline do seu sistema de água; o leito já está cavado no terreno.']),
+        ''
+      ] : []),
+      ...(o.lakes ? [
+        step('Lagos (pasta lagos/) — ' + o.lakes + ' lago(s)'),
+        '   ' + o.base + '_lagos.json: contorno de cada lago (x, y em cm) e o nível da água (nivel, em cm). O fundo já está cavado.',
+        v.engine === 5
+          ? '   Plugin Water: um Water Body Lake por lago, com o contorno na spline (fechada) na altura do nível e "Affects Landscape" desligado.'
+          : '   Ponha um plano de água em cada lago, na altura do nível.',
+        ''
+      ] : []),
+      ...(o.roads ? [
+        step('Estradas e trilhas (pasta estradas/) — ' + o.roads + ' caminho(s)'),
+        '   ' + o.base + '_estradas.json: traçado de cada estrada/trilha (x, y, z em cm), tipo e largura (cm).',
+        '   O terreno já foi suavizado na largura da via, acompanhando o relevo (sem corte seco).',
+        v.engine === 5
+          ? '   Use os pontos numa spline (Landscape Spline, Spline Mesh de estrada ou PCG) para pôr o calçamento e tirar a vegetação de cima.'
+          : '   Use os pontos numa spline de estrada para pôr o calçamento.',
+        ''
+      ] : []),
+      ...(o.biomes && o.biomes.length ? [
+        step('Biomas (pasta biomas/) — ' + o.biomes.join(', ')),
+        '   ' + o.base + '_biomas.png: máscara RGBA do mundo inteiro (centro em X = 0 / Y = 0): R = deserto, G = floresta,',
+        '   B = gelo/neve, A = vulcânico; onde todos são 0 é campo. Bordas suaves.',
+        '   Importe como textura (Compression = Masks ou VectorDisplacementmap, sRGB desligado) e use no material do Landscape',
+        '   (coordenadas do mundo divididas pelo tamanho do mundo) para trocar as texturas por bioma; também serve de máscara para o PCG.',
         ''
       ] : []),
       'Tamanho do mundo: ' + tier.name + ' — ' + tier.text,
