@@ -103,7 +103,7 @@ const S = {
   brush: { size: 60, strength: 0.35, hardness: 0.4, intensity: 1 },
   fillTol: 25, overlayAlpha: 0.55,
   P: { ...DEFAULT_P },
-  ex: { name: 'MeuMundo', ue: UE.DEFAULT_VERSION, res: 4033, mpq: 2, detail: 1.2, erode: true, layers: true, regions: true, veg: true, r16: false, markers: true, map: true, mapSize: 2048 },
+  ex: { name: 'MeuMundo', ue: UE.DEFAULT_VERSION, res: 4033, mpq: 2, detail: 1.2, erode: true, layers: true, regions: true, veg: true, r16: false, markers: true, rivers: true, map: true, mapSize: 2048 },
   guide: { dataURL: null, img: null, fit: 'contain', opacity: 0.5, visible: true, pixels: null, pick: null },
   H: null, stats: null, eroded: false, erosionStale: false,
   display: 'relief', view: { s: 1, tx: 0, ty: 0 }, mode: '2d',
@@ -741,7 +741,7 @@ function buildExportPanel() {
   $('#exMpq').value = String(S.ex.mpq);
   $('#exName').value = S.ex.name;
   $('#exErode').checked = S.ex.erode; $('#exLayers').checked = S.ex.layers; $('#exRegions').checked = S.ex.regions; $('#exR16').checked = S.ex.r16;
-  $('#exMarkers').checked = S.ex.markers; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize);
+  $('#exMarkers').checked = S.ex.markers; $('#exRivers').checked = S.ex.rivers !== false; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize);
   updateWorldSize();
 }
 function updateWorldSize() {
@@ -792,7 +792,7 @@ function bindControls() {
   $('#exRes').onchange = (e) => { S.ex.res = +e.target.value; updateWorldSize(); updateStats(); markDirty(); scheduleCompose(0); };
   $('#exMpq').onchange = (e) => { S.ex.mpq = +e.target.value; updateWorldSize(); updateStats(); markDirty(); scheduleCompose(0); };
   $('#exName').onchange = (e) => { S.ex.name = e.target.value.trim() || 'MeuMundo'; e.target.value = S.ex.name; markDirty(); };
-  for (const [id, key] of [['exErode', 'erode'], ['exLayers', 'layers'], ['exRegions', 'regions'], ['exVeg', 'veg'], ['exR16', 'r16'], ['exMarkers', 'markers'], ['exMap', 'map']]) $('#' + id).onchange = (e) => { S.ex[key] = e.target.checked; };
+  for (const [id, key] of [['exErode', 'erode'], ['exLayers', 'layers'], ['exRegions', 'regions'], ['exVeg', 'veg'], ['exR16', 'r16'], ['exMarkers', 'markers'], ['exRivers', 'rivers'], ['exMap', 'map']]) $('#' + id).onchange = (e) => { S.ex[key] = e.target.checked; };
   $('#vegShow').onchange = (e) => { S.showVeg = e.target.checked; scheduleVegDraw(); };
   $('#btnExport').onclick = doExport;
   $('#btnGuide').onclick = openGuide;
@@ -1286,6 +1286,8 @@ async function doExport() {
       extraFiles.push({ name: 'marcadores/' + base + '_marcadores.csv', blob: new Blob(['\ufeff' + markersCSV()], { type: 'text/csv' }) });
       extraFiles.push({ name: 'marcadores/' + base + '_marcadores.json', blob: new Blob([markersJSON()], { type: 'application/json' }) });
     }
+    const rivers = S.ex.rivers !== false ? riverLines() : [];
+    if (rivers.length) extraFiles.push({ name: 'rios/' + base + '_rios.json', blob: new Blob([riversJSON(rivers)], { type: 'application/json' }) });
     let vegNames = [];
     if (S.ex.veg !== false) {
       busyCount++; setTask('Gravando máscaras de vegetação…', null);
@@ -1300,7 +1302,7 @@ async function doExport() {
       } finally { busyCount--; setTask('', null); }
     }
     const half = ((res - 1) / 2) * mpq * 100;
-    const tpl = UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, veg: vegNames });
+    const tpl = UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, veg: vegNames });
     const r = await call('export', {
       P: S.P, erode: S.ex.erode, res, worldM: worldM(), detailAmp: S.ex.detail, detailWave: 40,
       r16: S.ex.r16, layers: S.ex.layers, regions: S.ex.regions, regionMasks: S.ex.regions,
@@ -1812,6 +1814,30 @@ function markersJSON() {
     mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0,
     marcadores: S.markers.map((m) => { const w = markerWorld(m); return { nome: m.name, tipo: markerTypeDef(m.type).name, regiao: markerRegion(m), x: +w.x.toFixed(1), y: +w.y.toFixed(1), z: +w.z.toFixed(1), altura_m: +w.h.toFixed(2), u: +m.u.toFixed(5), v: +m.v.toFixed(5) }; })
   }, null, 2);
+}
+
+// ================= rios (traçado para a engine) =================
+// O eixo de cada rio sai da camada Rios (js/rivers.js). Trechos curtos (manchas de pintura) ficam de fora.
+// Z = fundo do leito no terreno de trabalho, só uma estimativa: a engine mede o terreno de verdade.
+const RIVER_MIN_M = 150, RIVER_STEP_M = 30, RIVER_BRIDGE_M = 12; // falhas de até ~2× isso viram o mesmo rio
+const gridM = () => worldM() / (S.W - 1); // metros entre dois pontos da grade (mesma conta dos marcadores)
+function riverLines() {
+  if (!S.H || !S.masks.rivers.some((v) => v > 0.5)) return [];
+  const g = gridM();
+  return Rivers.extract(S.masks.rivers, S.H, S.W, { minLen: RIVER_MIN_M / g, step: Math.max(1, RIVER_STEP_M / g), bridge: Math.max(1, RIVER_BRIDGE_M / g) });
+}
+function riversJSON(lines) {
+  const W = S.W, span = (S.ex.res - 1) * S.ex.mpq * 100, gm = gridM();
+  return JSON.stringify({
+    mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], nivelDoMar: 0, profundidadeLeito_m: S.P.riverDepth,
+    rios: lines.map((r, k) => ({
+      nome: 'Rio ' + String(k + 1).padStart(2, '0'), foz: r.mouth ? 'mar' : 'terra', comprimento_m: Math.round(Rivers.length(r.pts) * gm),
+      pontos: r.pts.map((p) => ({
+        x: +((p.x / (W - 1) - 0.5) * span).toFixed(1), y: +((p.y / (W - 1) - 0.5) * span).toFixed(1),
+        z: +((heightAtMap(p.x, p.y) ?? 0) * 100).toFixed(1), largura: Math.round((2 * p.r * gm + S.P.riverWidth) * 100)
+      }))
+    }))
+  }, null, 1);
 }
 
 // ================= vegetação (áreas) =================

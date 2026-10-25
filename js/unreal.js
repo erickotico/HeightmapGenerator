@@ -252,6 +252,16 @@ const UE = {
         '   ' + o.base + '_marcadores.json: os mesmos dados em JSON (para ferramentas próprias).',
         ''
       ] : []),
+      ...(o.rivers ? [
+        step('Rios (pasta rios/) — ' + o.rivers + ' rio(s)'),
+        '   ' + o.base + '_rios.json: o eixo de cada rio da camada Rios, da nascente para a foz, em cm (centro em X = 0 / Y = 0).',
+        '   Cada ponto tem x, y, z (fundo do leito, estimado) e largura (cm). Trechos com menos de 150 m ficam de fora.',
+        ...(v.engine === 5 ? [
+          '   Plugin Water: um Water Body River por rio, com estes pontos na spline e "Affects Landscape" desligado',
+          '   (o leito já está cavado no terreno). Ponha a água entre o fundo e as margens medidas no Landscape.'
+        ] : ['   Use os pontos como spline do seu sistema de água; o leito já está cavado no terreno.']),
+        ''
+      ] : []),
       'Tamanho do mundo: ' + tier.name + ' — ' + tier.text,
       '',
       'Desempenho:',
