@@ -1,12 +1,13 @@
 /* Forja de Mundos — prévia 3D em WebGL2 puro (sem bibliotecas, funciona offline).
-   A malha é uma grade N×N; a altura vem de uma textura float lida no vertex shader. */
+   A malha é uma grade N×N; a altura vem de uma textura float lida no vertex shader.
+   Por cima: textura de detalhes (rios e estradas) na resolução cheia e superfície dos lagos no nível calculado. */
 'use strict';
 
 const VS_TERRAIN = `#version 300 es
 precision highp float; precision highp sampler2D;
-uniform sampler2D uH; uniform int uN; uniform float uCell; uniform float uExag; uniform mat4 uVP;
+uniform sampler2D uH; uniform int uN; uniform float uCell; uniform float uExag; uniform mat4 uVP; uniform vec2 uOvMap;
 layout(location=0) in vec2 aG;
-out vec3 vW; out vec3 vNrm; out float vH; out float vSlope;
+out vec3 vW; out vec3 vNrm; out float vH; out float vSlope; out vec2 vUV;
 float hAt(ivec2 p){ p = clamp(p, ivec2(0), ivec2(uN-1)); return texelFetch(uH, p, 0).r; }
 void main(){
   ivec2 p = ivec2(aG);
@@ -18,12 +19,14 @@ void main(){
   float half_ = float(uN-1) * uCell * 0.5;
   vec3 w = vec3(aG.x*uCell - half_, h*uExag, aG.y*uCell - half_);
   vW = w; vH = h;
+  vUV = aG / float(uN-1) * uOvMap.x + uOvMap.y; // grade da prévia → texel da textura de detalhes
   gl_Position = uVP * vec4(w, 1.0);
 }`;
 
 const FS_TERRAIN = `#version 300 es
 precision highp float;
-in vec3 vW; in vec3 vNrm; in float vH; in float vSlope;
+in vec3 vW; in vec3 vNrm; in float vH; in float vSlope; in vec2 vUV;
+uniform sampler2D uOv;
 uniform vec3 uSun; uniform vec3 uCam; uniform float uSnow; uniform float uBeach; uniform float uRock; uniform float uFog; uniform float uDeep;
 uniform vec3 uSky;
 out vec4 o;
@@ -42,6 +45,7 @@ void main(){
   float s = smoothstep(uSnow - 60.0, uSnow + 60.0, vH) * (1.0 - r * 0.7);
   c = mix(c, snow, s);
   if (vH < 0.0) c = mix(sand, vec3(.28,.33,.30), clamp(-vH / uDeep, 0.0, 1.0));
+  else { vec4 ov = texture(uOv, vUV); c = mix(c, ov.rgb, ov.a); } // rios e estradas
   float dif = max(dot(n, uSun), 0.0);
   vec3 col = c * (0.30 + 0.85 * dif);
   float d = length(vW - uCam);
@@ -65,6 +69,33 @@ void main(){
   float d = length(vW - uCam);
   col = mix(col, uSky, (1.0 - exp(-d / uFog)) * 0.65);
   o = vec4(col, 0.72);
+}`;
+
+// Lagos: a mesma grade, na altura do nível da água; fora dos lagos o fragmento é descartado.
+const VS_LAKE = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uH; uniform sampler2D uL; uniform int uN; uniform float uCell; uniform float uExag; uniform mat4 uVP;
+layout(location=0) in vec2 aG;
+out vec3 vW; out float vOn;
+void main(){
+  ivec2 p = ivec2(aG);
+  float lv = texelFetch(uL, p, 0).r, h = texelFetch(uH, p, 0).r;
+  vOn = lv > -1e5 ? 1.0 : 0.0;
+  float half_ = float(uN-1) * uCell * 0.5;
+  vW = vec3(aG.x*uCell - half_, (vOn > 0.5 ? lv : h - 50.0) * uExag, aG.y*uCell - half_);
+  gl_Position = uVP * vec4(vW, 1.0);
+}`;
+
+const FS_LAKE = `#version 300 es
+precision highp float;
+in vec3 vW; in float vOn; uniform vec3 uCam; uniform float uFog; uniform vec3 uSky;
+out vec4 o;
+void main(){
+  if (vOn < 0.5) discard;
+  vec3 col = vec3(.16,.45,.62);
+  float d = length(vW - uCam);
+  col = mix(col, uSky, (1.0 - exp(-d / uFog)) * 0.65);
+  o = vec4(col, 0.8);
 }`;
 
 const M4 = {
@@ -106,6 +137,20 @@ class Terrain3D {
     this.sky = [0.62, 0.72, 0.84];
     this.pT = this.program(VS_TERRAIN, FS_TERRAIN);
     this.pW = this.program(VS_WATER, FS_WATER);
+    this.pL = this.program(VS_LAKE, FS_LAKE);
+    this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    const mkTex = (filter) => {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    this.ovTex = mkTex(gl.LINEAR); this.ovMap = [1, 0];
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    this.lkTex = mkTex(gl.NEAREST); this.lakes = null;
     this.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -195,6 +240,52 @@ class Terrain3D {
     this.draw();
   }
 
+  // Textura de detalhes (canvas RGBA de qualquer tamanho cobrindo o mapa); srcW = resolução da grade do mapa.
+  setOverlay(canvas, srcW) {
+    if (!this.ok) return;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.ovTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    this.ovMap = [(srcW - 1) / srcW, 0.5 / srcW]; // célula g (0..srcW-1) → centro do texel (g + 0,5) / srcW
+    this.draw();
+  }
+
+  // Nível dos lagos (NaN = sem lago) reduzido para a grade da prévia: maior nível do bloco, alargado 1 célula
+  // para a água encostar na margem (o terreno da margem tampa o excesso).
+  setLakes(L, W) {
+    if (!this.ok || !this.N) return;
+    const gl = this.gl, N = this.N;
+    this.lakes = null;
+    if (L) {
+      const k = W / N, kk = Math.max(1, Math.ceil(k)), blk = new Float32Array(N * N).fill(-1e9);
+      let any = false;
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const sx = Math.floor(x * k), sy = Math.floor(y * k);
+        let m = -1e9;
+        for (let j = 0; j < kk && sy + j < W; j++) for (let i = 0; i < kk && sx + i < W; i++) { const v = L[(sy + j) * W + sx + i]; if (v > m) m = v; }
+        if (m > -1e5) { blk[y * N + x] = m; any = true; }
+      }
+      if (any) {
+        const out = Float32Array.from(blk);
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          if (blk[y * N + x] > -1e5) continue;
+          let m = -1e9;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < N && ny < N && blk[ny * N + nx] > m) m = blk[ny * N + nx];
+          }
+          out[y * N + x] = m;
+        }
+        this.lakes = out;
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.lkTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, this.lakes ? N : 1, this.lakes ? N : 1, 0, gl.RED, gl.FLOAT, this.lakes || new Float32Array([-1e9]));
+    this.draw();
+  }
+
   resetCamera() { this.dist = this.world * 1.05; this.target = [0, 0, 0]; this.yaw = 0.7; this.pitch = 0.6; this.draw(); }
 
   // Altura do terreno (m, sem exagero) num ponto do mundo — bilinear na malha da prévia.
@@ -203,6 +294,15 @@ class Terrain3D {
     const gx = Math.min(N - 1.001, Math.max(0, (x + half) / this.cell)), gz = Math.min(N - 1.001, Math.max(0, (z + half) / this.cell));
     const x0 = Math.floor(gx), z0 = Math.floor(gz), fx = gx - x0, fz = gz - z0, d = this.data, i = z0 * N + x0;
     return (d[i] * (1 - fx) + d[i + 1] * fx) * (1 - fz) + (d[i + N] * (1 - fx) + d[i + N + 1] * fx) * fz;
+  }
+
+  // Nível da água do lago naquele ponto (ou -Infinity fora dos lagos): na caminhada se anda por cima da água.
+  lakeAt(x, z) {
+    if (!this.lakes) return -Infinity;
+    const N = this.N, half = ((N - 1) * this.cell) / 2;
+    const gx = Math.round((x + half) / this.cell), gz = Math.round((z + half) / this.cell);
+    const v = this.lakes[Math.min(N - 1, Math.max(0, gz)) * N + Math.min(N - 1, Math.max(0, gx))];
+    return v > -1e5 ? v : -Infinity;
   }
 
   // Modo caminhada: câmera a 1,8 m do chão, escala real (sem exagero vertical). WASD move, arrastar olha.
@@ -309,7 +409,7 @@ class Terrain3D {
     let eye, look, proj;
     if (this.walk) {
       const wk = this.walk, cp = Math.cos(wk.pitch);
-      eye = [wk.x, Math.max(this.heightAt(wk.x, wk.z), 0) + 1.8, wk.z];
+      eye = [wk.x, Math.max(this.heightAt(wk.x, wk.z), 0, this.lakeAt(wk.x, wk.z)) + 1.8, wk.z];
       look = [eye[0] - Math.sin(wk.yaw) * cp, eye[1] + Math.sin(wk.pitch), eye[2] - Math.cos(wk.yaw) * cp];
       proj = M4.persp(1.1, w / h, 0.3, this.world * 2);
     } else {
@@ -342,6 +442,10 @@ class Terrain3D {
     gl.uniform1f(T.u.uDeep, this.params.deep);
     gl.uniform1f(T.u.uFog, fog);
     gl.uniform3fv(T.u.uSky, this.sky);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.ovTex);
+    gl.uniform1i(T.u.uOv, 1);
+    gl.uniform2f(T.u.uOvMap, this.ovMap[0], this.ovMap[1]);
     gl.bindVertexArray(this.vao);
     gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_INT, 0);
 
@@ -357,6 +461,21 @@ class Terrain3D {
     gl.uniform3fv(Wp.u.uSky, this.sky);
     gl.bindVertexArray(this.wvao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    if (this.lakes) {
+      const L = this.pL;
+      gl.useProgram(L.p);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.uniform1i(L.u.uH, 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.lkTex); gl.uniform1i(L.u.uL, 1);
+      gl.uniform1i(L.u.uN, this.N);
+      gl.uniform1f(L.u.uCell, this.cell);
+      gl.uniform1f(L.u.uExag, this.exag);
+      gl.uniformMatrix4fv(L.u.uVP, false, vp);
+      gl.uniform3fv(L.u.uCam, eye);
+      gl.uniform1f(L.u.uFog, fog);
+      gl.uniform3fv(L.u.uSky, this.sky);
+      gl.bindVertexArray(this.vao);
+      gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_INT, 0);
+    }
     gl.bindVertexArray(null);
     gl.depthMask(true);
   }

@@ -1484,8 +1484,44 @@ function sync3DParams() {
 function update3D() {
   if (!t3d.ok || !S.H) return;
   sync3DParams();
-  if (view3dDirty) { t3d.setHeights(S.H, S.W, worldM()); view3dDirty = false; }
+  if (view3dDirty) {
+    t3d.setHeights(S.H, S.W, worldM());
+    t3d.setLakes(S.lakeLevel, S.W);
+    t3d.setOverlay(build3DOverlay(), S.W);
+    view3dDirty = false;
+  }
   t3d.draw();
+}
+// Detalhes pintados por cima do terreno 3D (resolução cheia, até 4096): rios em azul e estradas com borda,
+// iguais ao mapa 2D. Lagos não entram aqui: viram uma superfície de água de verdade (t3d.setLakes).
+const ov3d = document.createElement('canvas');
+function build3DOverlay() {
+  const W = S.W, n = Math.min(W, 4096, t3d.maxTex || 4096), k = n / W;
+  ov3d.width = ov3d.height = n;
+  const ctx = ov3d.getContext('2d');
+  const riv = Feat.combinedRivers(), img = ctx.createImageData(n, n), px = img.data;
+  for (let y = 0; y < n; y++) {
+    const sy = Math.min(W - 1, Math.floor(y / k)) * W;
+    for (let x = 0; x < n; x++) {
+      const v = riv[sy + Math.min(W - 1, Math.floor(x / k))];
+      if (v <= 0.05) continue;
+      const o = (y * n + x) * 4;
+      px[o] = 52; px[o + 1] = 118; px[o + 2] = 178; px[o + 3] = Math.min(1, v * 1.4) * 220;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.lineCap = ctx.lineJoin = 'round';
+  const cm = Feat.mPerCell();
+  for (const r of S.roads) {
+    const g = Feat.roadGrid(r);
+    if (g.length < 2) continue;
+    const core = Math.max(1.4, r.width / cm) * k; // mesma largura mínima visível do 2D
+    ctx.beginPath();
+    g.forEach((p, i) => { const X = (p.x + 0.5) * k, Y = (p.y + 0.5) * k; if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); });
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = core + 1.8 * k; ctx.stroke();
+    ctx.strokeStyle = r.kind === 'trilha' ? 'rgb(150,118,82)' : 'rgb(184,156,112)'; ctx.lineWidth = core; ctx.stroke();
+  }
+  return ov3d;
 }
 
 // ================= régua e barra de escala =================
