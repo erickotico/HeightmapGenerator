@@ -226,7 +226,7 @@ const I18N_EN = {
   'PCG ou Foliage com instâncias em vez de colocar à mão; HLOD do World Partition para o que está longe.': 'PCG or Foliage with instances instead of placing by hand; World Partition HLOD for what is far away.',
   'PCG ou Foliage com instâncias em vez de colocar à mão.': 'PCG or Foliage with instances instead of placing by hand.',
   // ---------- rios e estradas ----------
-  'Estrada': 'Road', 'Trilha': 'Trail', 'Rio': 'River', 'Nascente — clique no destino': 'Source — click the destination',
+  'Estrada': 'Road', 'Trilha': 'Trail', 'Rio': 'River', 'Traçando a rota…': 'Routing…', 'Nascente — clique no destino': 'Source — click the destination',
   'Não achei caminho por terra até esse ponto (mar ou lago no meio).': 'No land route to that point (sea or lake in the way).',
   'Nascente marcada. Agora clique no destino (mar, lago ou outro rio). Esc cancela.': 'Source marked. Now click the destination (sea, lake or another river). Esc cancels.',
   'Não achei um caminho entre esses dois pontos.': 'No path found between these two points.',

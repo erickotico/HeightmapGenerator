@@ -46,8 +46,8 @@ const UI = (() => {
       { tool: 'paint', layer: 'sculpt', name: 'Elevar (m)', icon: 'raise' },
       { tool: 'erase', layer: 'sculpt', name: 'Rebaixar (m)', icon: 'lower' },
       { tool: 'level', layer: 'sculpt', name: 'Nivelar (altura exata)', key: 'N', icon: 'level' }] },
-    { id: 'river', items: [{ tool: 'river', name: 'Rio (linha editável)', key: 'V', icon: 'river' }] },
     { id: 'paths', items: [
+      { tool: 'river', name: 'Rio (linha editável)', key: 'V', icon: 'river' },
       { tool: 'road', name: 'Estrada / trilha', key: 'T', icon: 'road' },
       { run: 'lakes', name: 'Lagos (pintar)', key: '7', icon: 'lake' }] },
     { id: 'ruler', items: [{ tool: 'ruler', name: 'Régua', key: 'R', icon: 'ruler' }] },
@@ -74,8 +74,8 @@ const UI = (() => {
     if (S.active === 'sculpt' && (t === 'paint' || t === 'erase' || t === 'level')) return ['sculpt', { paint: 0, erase: 1, level: 2 }[t]];
     if (t === 'paint' || t === 'erase' || t === 'smooth') return ['brush', { paint: 0, erase: 1, smooth: 2 }[t]];
     if (t === 'fill' || t === 'pick') return ['fill', t === 'fill' ? 0 : 1];
-    if (t === 'river') return ['river', 0];
-    if (t === 'road') return ['paths', 0];
+    if (t === 'river') return ['paths', 0];
+    if (t === 'road') return ['paths', 1];
     if (t === 'ruler') return ['ruler', 0];
     return [null, 0];
   }
@@ -169,7 +169,7 @@ const UI = (() => {
     const [cg, ci] = currentItem();
     if (cg && cg !== 'veg' && cg !== 'biome') groupById(cg).cur = ci;
     const lakePaint = S.active === 'lakes' && PAINT_TOOLS.includes(S.tool); // lagos é camada: o grupo mostra o lago enquanto se pinta nela
-    if (lakePaint) groupById('paths').cur = 1;
+    if (lakePaint) groupById('paths').cur = 2;
     for (const b of qa('#toolbox .tbx')) {
       const g = groupById(b.dataset.g);
       if (g.kind === 'layer') {

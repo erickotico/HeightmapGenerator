@@ -168,9 +168,19 @@ const Feat = (() => {
     }
     // rio ou estrada sendo desenhado
     if (S.riverA) { const p = g2s(S.riverA.x, S.riverA.y); parts.push(`<circle cx="${p.x}" cy="${p.y}" r="7" fill="#3278ff" stroke="#fff" stroke-width="2"/><text class="rl-text" x="${p.x + 12}" y="${p.y + 4}" style="paint-order:stroke;stroke:#000;stroke-width:3px">Nascente — clique no destino</text>`); }
-    if (S.roadDraft && S.roadDraft.anchors.length && lastMouse) {
-      const a = uv2g(S.roadDraft.anchors[S.roadDraft.anchors.length - 1]), p = g2s(a.x, a.y);
-      parts.push(`<line x1="${p.x}" y1="${p.y}" x2="${lastMouse.x}" y2="${lastMouse.y}" stroke="#ffd36b" stroke-width="1.5" stroke-dasharray="5 4"/>`);
+    // estrada em construção: os trechos já traçados aparecem na hora (antes só apareciam ao terminar)
+    const d = S.roadDraft;
+    if (d) {
+      const w = Math.max(2, S.roadDef.width * sc), g = d.segs.flatMap((s, k) => (k ? s.slice(1) : s)).map(uv2g);
+      if (g.length > 1) {
+        const pd = pathD(g);
+        parts.push(`<path d="${pd}" fill="none" stroke="rgba(40,25,10,.7)" stroke-width="${w + 2}" stroke-linecap="round" stroke-linejoin="round"/>`);
+        parts.push(`<path d="${pd}" fill="none" stroke="#ffd36b" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`);
+      }
+      d.anchors.forEach((a) => { const p = g2s(uv2g(a).x, uv2g(a).y); parts.push(`<circle class="ft-pt sel" cx="${p.x}" cy="${p.y}" r="5" fill="#d9b77e"/>`); });
+      const a = uv2g(d.anchors[d.anchors.length - 1]), p = g2s(a.x, a.y);
+      if (lastMouse) parts.push(`<line x1="${p.x}" y1="${p.y}" x2="${lastMouse.x}" y2="${lastMouse.y}" stroke="#ffd36b" stroke-width="1.5" stroke-dasharray="5 4"/>`);
+      if (d.busy) parts.push(`<text class="rl-text" x="${p.x + 12}" y="${p.y - 10}" style="paint-order:stroke;stroke:#000;stroke-width:3px">Traçando a rota…</text>`);
     }
     svg.innerHTML = parts.join('');
   }
@@ -341,13 +351,14 @@ const Feat = (() => {
     const uv = g2uv(p.x - 0.5, p.y - 0.5), last = d.anchors[d.anchors.length - 1], lg = uv2g(last), ng = uv2g(uv);
     if (Math.hypot(lg.x - ng.x, lg.y - ng.y) < 2) { if (finish !== false) finishDraft(); return; }
     d.busy = true;
+    render();
     try {
       await flushCompose();
       const seg = await routeSeg(last, uv, S.roadDef.kind);
       if (!seg) { toast('Não achei caminho por terra até esse ponto (mar ou lago no meio).', true); return; }
       d.anchors.push(uv); d.segs.push(seg);
       render();
-    } catch (err) { showError(err); } finally { d.busy = false; }
+    } catch (err) { showError(err); } finally { d.busy = false; render(); }
     if (d.finishPending && S.roadDraft === d) finishDraft();
   }
   function finishDraft() {
