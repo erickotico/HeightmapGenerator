@@ -17,6 +17,7 @@
       <button data-view="2d" class="active">Mapa 2D</button>
       <button data-view="3d">Prévia 3D</button>
     </div>
+    <button id="btnLang" class="lang-btn" title="Idioma / Language"></button>
     <button id="btnGuide" class="accent">Guia do Unreal</button>
   </div>
   <input type="file" id="fileProject" accept=".forja,.png,.jpg,.jpeg,image/png,image/jpeg" hidden>
@@ -111,7 +112,7 @@
     <section class="dpanel" data-panel="regions" data-title="Regiões / Reinos" id="regionPanel">
       <div id="regionList"></div>
       <button id="btnAddRegion" class="small">+ Nova região</button>
-      <p class="hint">Não muda o relevo: só delimita espaço (vira máscara para o PCG). Escolha a região aqui e pinte com o botão <b>Regiões</b> (8) da barra de ferramentas.</p>
+      <p class="hint">Não muda o relevo: só delimita espaço (vira máscara para o PCG). Escolha a região aqui e pinte com o botão <b>Regiões</b> (9) da barra de ferramentas.</p>
     </section>
 
     <section class="dpanel" data-panel="guide" data-title="Imagem-guia (seu desenho)">
@@ -238,6 +239,7 @@
 
 <div id="toast" hidden></div>
 
+<script src="js/i18n.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/gl3d.js"></script>
 <script src="js/unreal.js"></script>

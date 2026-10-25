@@ -5,7 +5,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
-const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmt = (n, d = 0) => Number(n).toLocaleString(I18N.locale(), { minimumFractionDigits: d, maximumFractionDigits: d });
 const hexToRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // Igual ao fileSafe do motor: os nomes do LEIA-ME precisam bater com os arquivos do ZIP.
@@ -669,7 +669,7 @@ function buildRegionList() {
 function addRegion() {
   if (S.regionDefs.length >= 32) { toast('Máximo de 32 regiões.'); return; }
   const n = S.regionDefs.length;
-  S.regionDefs.push({ name: `Região ${n + 1}`, color: REGION_COLORS[n % REGION_COLORS.length] });
+  S.regionDefs.push({ name: I18N.tr(`Região ${n + 1}`), color: REGION_COLORS[n % REGION_COLORS.length] });
   S.regionBrush = n + 1;
   buildRegionList(); markDirty();
 }
@@ -1294,7 +1294,7 @@ async function newProject(ask = true) {
   Feat.load({});
   S.ruler = null;
   S.markers = []; S.markerSel = null; S.markerSeq = 0; renderMarkers(); buildMarkerList();
-  S.regionDefs = [1, 2, 3, 4].map((n) => ({ name: `Região ${n}`, color: REGION_COLORS[n - 1] }));
+  S.regionDefs = [1, 2, 3, 4].map((n) => ({ name: I18N.tr(`Região ${n}`), color: REGION_COLORS[n - 1] }));
   S.regionBrush = 1; S.undo = []; S.redo = []; S.lastExport = null;
   S.base = null; S.baseInfo = null; updateBasePanel();
   clearGuide();
@@ -1348,7 +1348,7 @@ async function doExport() {
       } finally { busyCount--; setTask('', null); }
     }
     const half = ((res - 1) / 2) * mpq * 100;
-    const tpl = UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, lakes: lakes.length, roads: roads.length, biomes: biomeNames, veg: vegNames });
+    const tpl = I18N.doc(UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, lakes: lakes.length, roads: roads.length, biomes: biomeNames, veg: vegNames }));
     const r = await call('export', {
       P: S.P, erode: S.ex.erode, res, worldM: worldM(), detailAmp: S.ex.detail, detailWave: 40,
       r16: S.ex.r16, layers: S.ex.layers, regions: S.ex.regions, regionMasks: S.ex.regions,
@@ -1734,7 +1734,7 @@ function markerDown(p, e) {
     snapshot(['markers']);
     const t = markerTypeDef(S.markerType), id = ++S.markerSeq;
     const count = S.markers.filter((m) => m.type === t.id).length + 1;
-    S.markers.push({ id, name: `${t.name} ${count}`, type: t.id, u, v });
+    S.markers.push({ id, name: `${I18N.tr(t.name)} ${count}`, type: t.id, u, v });
     S.markerSel = id;
     markerDrag = { id, moved: true };
     markDirty();
@@ -2295,6 +2295,14 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; updateCursorSize(); } });
 
+// ================= idioma =================
+// Os textos fixos o I18N troca sozinho; aqui só se refaz o que tem número formatado (vírgula ↔ ponto).
+function refreshLanguage() {
+  updateStats(); updateWorldSize(); updateErosionInfo(); buildExportPanel(); refreshParamInputs();
+  buildMarkerList(); renderMarkers(); buildVegList(); buildBiomeList(); buildRegionList(); Feat.buildList(); Feat.render(); UI.sync();
+  $$('input[type=range]').forEach((r) => r.dispatchEvent(new Event('input'))); // valores ao lado das barras
+}
+
 // ================= início =================
 (async function init() {
   S.masks = emptyMasks(S.W);
@@ -2307,6 +2315,7 @@ window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false
   Feat.bindOptions();
   buildPresets();
   try { const ue = localStorage.getItem('forja.ue'); if (ue) S.ex.ue = UE.version(ue).id; } catch (e) { /* sem localStorage: fica o padrão */ }
+  I18N.init(refreshLanguage); // antes de montar os painéis: os números já saem no formato do idioma
   buildParams(); buildExportPanel(); bindControls(); setActive('land'); setTool('paint'); updateGuideUI(); updateErosionInfo();
   fitView();
   let restored = false;

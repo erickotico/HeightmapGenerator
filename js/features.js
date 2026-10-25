@@ -98,7 +98,7 @@ const Feat = (() => {
     dense.push(ctrl[ctrl.length - 1]);
     ctrl = dense;
     const id = ++S.featSeq;
-    return { id, name: 'Rio ' + (S.vrivers.length + 1), pts: ctrl.map((p) => g2uv(p.x, p.y)), w0, w1 };
+    return { id, name: I18N.tr('Rio') + ' ' + (S.vrivers.length + 1), pts: ctrl.map((p) => g2uv(p.x, p.y)), w0, w1 };
   }
   function riverLengthM(r) { return polyLen(curve(riverGrid(r), 1)) * mPerCell(); }
 
@@ -353,7 +353,7 @@ const Feat = (() => {
     if (d && d.segs.length) {
       snapshot(['roads']);
       const k = ROAD_KINDS[S.roadDef.kind], id = ++S.featSeq;
-      const road = { id, name: `${k.name} ${S.roads.filter((r) => r.kind === S.roadDef.kind).length + 1}`, kind: S.roadDef.kind, width: S.roadDef.width, anchors: d.anchors, segs: d.segs };
+      const road = { id, name: `${I18N.tr(k.name)} ${S.roads.filter((r) => r.kind === S.roadDef.kind).length + 1}`, kind: S.roadDef.kind, width: S.roadDef.width, anchors: d.anchors, segs: d.segs };
       S.roads.push(road);
       select('road', id); changed();
       toast(`${road.name}: ${fmt(roadLengthM(road) / 1000, 2)} km, contornando as subidas fortes. Arraste os pontos para mudar a rota; Alt+clique apaga um ponto.`);
