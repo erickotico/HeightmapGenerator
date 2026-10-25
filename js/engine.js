@@ -105,7 +105,7 @@ function ForjaEngine() {
   function anyAbove(a, t) { for (let i = 0; i < a.length; i++) if (a[i] > t) return true; return false; }
 
   // ================= estado =================
-  const S = { W: 0, worldM: 0, cell: 0, fields: null, fieldsKey: '', base: null, eroded: null, P: null, lakeLevel: null, roads: null, roadMask: null };
+  const S = { W: 0, worldM: 0, cell: 0, fields: null, fieldsKey: '', base: null, eroded: null, P: null, lakeLevel: null, roads: null, roadMask: null, roadPaint: null };
 
   function post(msg, transfer) { self.postMessage(msg, transfer || []); }
   function progress(label, value) { post({ type: 'progress', label, value }); }
@@ -212,6 +212,7 @@ function ForjaEngine() {
     if (m.sculpt) for (let i = 0; i < N; i++) H[i] += m.sculpt[i];
     S.lakeLevel = m.lakes && anyAbove(m.lakes, 0.5) ? applyLakes(H, m.lakes, P) : null;
     S.roads = m.roads && m.roads.length ? m.roads : null;
+    S.roadPaint = null;
     S.roadMask = S.roads ? applyRoads(H, S.roads) : null;
   }
 
@@ -308,6 +309,8 @@ function ForjaEngine() {
   function applyRoads(H, roads) {
     const W = S.W, N = W * W, cell = S.cell;
     const tgt = new Float32Array(N), wt = new Float32Array(N), dmin = new Float32Array(N).fill(Infinity);
+    // pintura da pista na textura (como os lagos): cobertura da pista, borda escura e tipo (1 estrada, 2 trilha)
+    const cov = new Uint8Array(N), edge = new Uint8Array(N), kind = new Uint8Array(N);
     for (const r of roads) {
       const src = r.pts, n0 = src.length >> 1;
       if (n0 < 2) continue;
@@ -334,7 +337,8 @@ function ForjaEngine() {
         }
         a = b;
       }
-      const half = Math.max(0.5, r.width / 2 / cell), sh = Math.max(1.5, half * 1.5), R = half + sh;
+      const half = Math.max(0.5, r.width / 2 / cell), sh = Math.max(1.5, half * 1.5), R = Math.max(half + sh, half + 2);
+      const hv = Math.max(half, 0.7), kc = r.kind === 'trilha' ? 2 : 1; // pista visível com pelo menos ~1,4 célula
       for (let i = 0; i < n; i++) {
         const cx = xs[i], cy = ys[i];
         const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R));
@@ -345,9 +349,13 @@ function ForjaEngine() {
           const c = y * W + x, w = d <= half ? 1 : 1 - smooth01((d - half) / sh);
           if (w > wt[c]) wt[c] = w;
           if (d < dmin[c]) { dmin[c] = d; tgt[c] = a[i]; }
+          const cv = clamp(hv + 0.5 - d, 0, 1) * 255, ev = clamp(hv + 1.4 - d, 0, 1) * 255;
+          if (cv > cov[c]) { cov[c] = cv; kind[c] = kc; }
+          if (ev > edge[c]) edge[c] = ev;
         }
       }
     }
+    S.roadPaint = { cov, edge, kind };
     const mask = new Float32Array(N);
     for (let c = 0; c < N; c++) {
       if (!wt[c]) continue;
@@ -547,7 +555,8 @@ function ForjaEngine() {
     }
   }
 
-  function colorize(H, W, cell, P, mode, lakeLevel) {
+  const ROAD_RGB = { 1: [184, 156, 112], 2: [150, 118, 82] }; // estrada (terra batida/cascalho) · trilha
+  function colorize(H, W, cell, P, mode, lakeLevel, road) {
     const out = new Uint8ClampedArray(W * W * 4);
     let mn = Infinity, mx = -Infinity, land = 0;
     for (let i = 0; i < H.length; i++) { const v = H[i]; if (v < mn) mn = v; if (v > mx) mx = v; if (v > 0) land++; }
@@ -602,6 +611,13 @@ function ForjaEngine() {
             r = (c[0] + (125 - c[0]) * rk) * shade; g = (c[1] + (120 - c[1]) * rk) * shade; b = (c[2] + (115 - c[2]) * rk) * shade;
           }
         }
+        // estradas e trilhas pintadas no chão (fora d'água): borda escura + pista
+        if (road && road.edge[i] && (mode === 'relief' || mode === 'layers') && h >= 0 && !(lakeLevel && h < lakeLevel[i])) {
+          const e = road.edge[i] / 255 * 0.35, k = road.cov[i] / 255, rc = ROAD_RGB[road.kind[i]] || ROAD_RGB[1];
+          r *= 1 - e; g *= 1 - e; b *= 1 - e;
+          const s3 = 0.75 + 0.35 * (shade - 0.35);
+          r += (rc[0] * s3 - r) * k; g += (rc[1] * s3 - g) * k; b += (rc[2] * s3 - b) * k;
+        }
         out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
       }
     }
@@ -612,7 +628,7 @@ function ForjaEngine() {
 
   function reply(id, extra) {
     const H = current();
-    const col = colorize(H, S.W, S.cell, S.P, extra.mode || 'relief', S.lakeLevel);
+    const col = colorize(H, S.W, S.cell, S.P, extra.mode || 'relief', S.lakeLevel, S.roadPaint);
     const Hc = Float32Array.from(H), lk = S.lakeLevel ? Float32Array.from(S.lakeLevel) : null;
     post({ type: 'height', id, H: Hc, rgba: col.rgba, stats: col.stats, eroded: !!S.eroded, W: S.W, lakeLevel: lk }, lk ? [Hc.buffer, col.rgba.buffer, lk.buffer] : [Hc.buffer, col.rgba.buffer]);
   }

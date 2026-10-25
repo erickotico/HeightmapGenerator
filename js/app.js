@@ -2268,7 +2268,10 @@ async function openMapPreview() {
 // ================= teclado =================
 window.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+  // barras e caixinhas não roubam os atalhos (depois de arrastar uma barra o foco fica nela); só campos de texto
+  const typing = tag === 'textarea' || tag === 'select' || (tag === 'input' && !['range', 'checkbox', 'radio', 'button', 'color'].includes(e.target.type));
+  if (typing) return;
+  if (tag === 'input' && /^(Arrow|Home|End|Page)/.test(e.key)) return; // setas continuam ajustando a barra
   if (t3d.walk) return; // WASD é da caminhada
   if (e.ctrlKey || e.metaKey) {
     const k = e.key.toLowerCase();
@@ -2288,8 +2291,10 @@ window.addEventListener('keydown', (e) => {
   // o Balde não funciona no Esculpir: volta para a última camada comum
   if (tools[k]) { if (k === 'g' && S.active === 'sculpt') setActive(S.lastLayer || 'land'); setTool(tools[k]); return; }
   if (k === 'f') { fitView(); return; }
-  if (e.key === '[' || e.key === ']') {
-    S.brush.size = clamp(Math.round(S.brush.size * (e.key === ']' ? 1.15 : 1 / 1.15)), 2, 400);
+  if (e.key === '[' || e.key === ']') { // ] aumenta, [ diminui: 15% por toque, nunca menos de 1 px (pincel pequeno não trava)
+    e.preventDefault();
+    const up = e.key === ']', s = S.brush.size, v = Math.round(s * (up ? 1.15 : 1 / 1.15));
+    S.brush.size = clamp(v === s ? s + (up ? 1 : -1) : v, 2, 400);
     $('#brushSize').value = S.brush.size; updateBrushOut(); updateCursorSize();
   }
 });

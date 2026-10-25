@@ -262,7 +262,7 @@ const I18N_EN = {
   'Contorno e nível da água de cada lago (no Unreal: Water Body Lake).': 'Outline and water level of each lake (in Unreal: Water Body Lake).',
   'Traçado, largura e altura de cada estrada e trilha (para spline de estrada ou PCG).': 'Path, width and height of each road and trail (for a road spline or PCG).',
   'Máscara RGBA: R deserto, G floresta, B gelo/neve, A vulcânico.': 'RGBA mask: R desert, G forest, B ice/snow, A volcanic.', 'Fechar': 'Close', 'Forja de Mundos': 'World Forge',
-  'Tamanho': 'Size', 'Força': 'Strength', 'Dureza': 'Hardness', 'Intensidade': 'Intensity', 'Metros por pincelada': 'Meters per stroke', 'Altura alvo (m)': 'Target height (m)', 'Tolerância': 'Tolerance',
+  'Tamanho': 'Size', 'Tamanho do pincel: [ diminui · ] aumenta': 'Brush size: [ smaller · ] bigger', 'Força': 'Strength', 'Dureza': 'Hardness', 'Intensidade': 'Intensity', 'Metros por pincelada': 'Meters per stroke', 'Altura alvo (m)': 'Target height (m)', 'Tolerância': 'Tolerance',
   'Usar contornos da imagem-guia': 'Use guide image outlines', 'Nascente (m)': 'Source (m)', 'Foz (m)': 'Mouth (m)', 'Pintura → rios': 'Painting → rivers', 'Limpar manchinhas': 'Clean specks',
   'Estrada (rampa até 12%)': 'Road (slope up to 12%)', 'Trilha (rampa até 25%)': 'Trail (slope up to 25%)', 'Largura (m)': 'Width (m)', 'Máscara': 'Mask',
   'Esquerdo: usar ferramenta · Shift: apagar · Direito/meio ou Espaço: mover · Roda: zoom · F: enquadrar': 'Left: use tool · Shift: erase · Right/middle or Space: move · Wheel: zoom · F: fit',

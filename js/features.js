@@ -145,7 +145,10 @@ const Feat = (() => {
     for (const r of S.roads) {
       const k = ROAD_KINDS[r.kind] || ROAD_KINDS.estrada, g = roadGrid(r), w = Math.max(2, r.width * sc);
       const isSel = sel && sel.kind === 'road' && sel.id === r.id;
-      if (g.length > 1) {
+      // fora da edição a pista já vem pintada no terreno; a linha só aparece de longe (pista menor que ~2 px)
+      if (g.length > 1 && !showRoadPts && !isSel) {
+        if (r.width * sc < 2) parts.push(`<path d="${pathD(g)}" fill="none" stroke="${k.color}" stroke-opacity=".85" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`);
+      } else if (g.length > 1) {
         const d = pathD(g);
         parts.push(`<path d="${d}" fill="none" stroke="rgba(40,25,10,.7)" stroke-width="${w + 2}" stroke-linecap="round" stroke-linejoin="round"/>`);
         parts.push(`<path d="${d}" fill="none" stroke="${isSel ? '#ffd36b' : k.color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"${r.kind === 'trilha' ? ` stroke-dasharray="${Math.max(3, w * 1.6)} ${Math.max(2, w)}"` : ''}/>`);

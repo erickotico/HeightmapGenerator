@@ -47,8 +47,9 @@ const UI = (() => {
       { tool: 'erase', layer: 'sculpt', name: 'Rebaixar (m)', icon: 'lower' },
       { tool: 'level', layer: 'sculpt', name: 'Nivelar (altura exata)', key: 'N', icon: 'level' }] },
     { id: 'river', items: [{ tool: 'river', name: 'Rio (linha editável)', key: 'V', icon: 'river' }] },
-    { id: 'lakes', items: [{ run: 'lakes', name: 'Lagos (pintar)', key: '7', icon: 'lake' }] },
-    { id: 'road', items: [{ tool: 'road', name: 'Estrada / trilha', key: 'T', icon: 'road' }] },
+    { id: 'paths', items: [
+      { tool: 'road', name: 'Estrada / trilha', key: 'T', icon: 'road' },
+      { run: 'lakes', name: 'Lagos (pintar)', key: '7', icon: 'lake' }] },
     { id: 'ruler', items: [{ tool: 'ruler', name: 'Régua', key: 'R', icon: 'ruler' }] },
     { id: 'marker', items: [
       { tool: 'marker', kind: 'build', name: 'Marcador de construção', key: 'M', icon: 'castle' },
@@ -74,7 +75,7 @@ const UI = (() => {
     if (t === 'paint' || t === 'erase' || t === 'smooth') return ['brush', { paint: 0, erase: 1, smooth: 2 }[t]];
     if (t === 'fill' || t === 'pick') return ['fill', t === 'fill' ? 0 : 1];
     if (t === 'river') return ['river', 0];
-    if (t === 'road') return ['road', 0];
+    if (t === 'road') return ['paths', 0];
     if (t === 'ruler') return ['ruler', 0];
     return [null, 0];
   }
@@ -167,6 +168,8 @@ const UI = (() => {
   function syncToolbox() {
     const [cg, ci] = currentItem();
     if (cg && cg !== 'veg' && cg !== 'biome') groupById(cg).cur = ci;
+    const lakePaint = S.active === 'lakes' && PAINT_TOOLS.includes(S.tool); // lagos é camada: o grupo mostra o lago enquanto se pinta nela
+    if (lakePaint) groupById('paths').cur = 1;
     for (const b of qa('#toolbox .tbx')) {
       const g = groupById(b.dataset.g);
       if (g.kind === 'layer') {
@@ -191,7 +194,7 @@ const UI = (() => {
       const it = g.items[g.cur], multi = g.items.length > 1;
       b.innerHTML = icon(it.icon) + (multi ? '<span class="tri"></span>' : '');
       b.title = `${it.name}${it.key ? ` (${it.key})` : ''}${multi ? ' — botão direito, segurar ou clicar no triângulo mostra o grupo' : ''}`;
-      b.classList.toggle('active', g.id === 'regions' || g.id === 'lakes' ? S.active === g.id : g.id === cg);
+      b.classList.toggle('active', g.id === 'regions' ? S.active === g.id : g.id === cg || (g.id === 'paths' && lakePaint));
     }
   }
 
