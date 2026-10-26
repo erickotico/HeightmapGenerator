@@ -232,6 +232,16 @@ const UE = {
         '   (X e Y em cm; multiplique U e V pelo tamanho do Image no Widget para posicionar o ícone.)',
         ''
       ] : []),
+      ...(o.minimap ? [
+        step('Minimapa em pedaços (pasta mapa/minimapa/) — ' + o.minimap.n + ' × ' + o.minimap.n + ' imagens de 1024 px'),
+        '   O mapa limpo com mais detalhe, cortado em pedaços que se encaixam. Cada pedaço cobre ' + this.fmt(o.minimap.tileKm, 2) + ' km.',
+        '   ' + o.base + '_minimapa_C_L.png: C = coluna (oeste → leste), L = linha (norte → sul), começando em 0.',
+        '   Importe como textura de UI (igual ao mapa acima). Só Blueprint, sem código:',
+        '   a) No Widget do minimapa, um Canvas Panel com as imagens lado a lado (todas do mesmo tamanho), por cima de uma máscara redonda ou quadrada.',
+        '   b) A cada Tick, mova esse Canvas Panel pela posição do jogador (U e V da fórmula acima × tamanho total), para o jogador ficar no centro.',
+        '   ' + o.base + '_minimapa.json: tamanho do mundo e de cada pedaço em cm (para conferir).',
+        ''
+      ] : []),
       ...(o.veg && o.veg.length ? [
         step('Vegetação (pasta vegetacao/) — ' + o.veg.join(', ')),
         '   ' + o.base + '_vegetacao.png = mapa colorido (uma cor por tipo, legenda no _vegetacao.json).',

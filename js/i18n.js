@@ -158,6 +158,16 @@ const I18N_EN = {
   'Pinte sobre as montanhas e solte: a chuva escava ravinas só ali. Força = quanta chuva.': 'Paint over the mountains and release: rain carves gullies only there. Strength = how much rain.',
   '{s} carimbado(a). Ctrl+Z desfaz; o resultado fica na camada Esculpir.': '{s} stamped. Ctrl+Z undoes; the result stays in the Sculpt layer.',
   'Nada para erodir aí: pinte sobre terra (acima do mar).': 'Nothing to erode there: paint over land (above sea level).',
+  'Minimapa em pedaços': 'Minimap in tiles', 'Não': 'No',
+  'O mapa limpo com muito mais detalhe, cortado em imagens de 1024 px que se encaixam (para o minimapa seguir o jogador de perto).': 'The clean map with much more detail, cut into 1024 px images that fit together (so the minimap can follow the player up close).',
+  'Desenhando o minimapa: {s} de {s}…': 'Drawing the minimap: {s} of {s}…',
+  'Minimapa em pedaços (pasta mapa/minimapa/) — {s} × {s} imagens de 1024 px': 'Minimap in tiles (folder mapa/minimapa/) — {s} × {s} images of 1024 px',
+  'O mapa limpo com mais detalhe, cortado em pedaços que se encaixam': 'The clean map with more detail, cut into tiles that fit together', 'Cada pedaço cobre {s} km.': 'Each tile covers {s} km.',
+  '{s}_minimapa_C_L.png: C = coluna (oeste → leste), L = linha (norte → sul), começando em 0.': '{s}_minimapa_C_L.png: C = column (west → east), L = row (north → south), starting at 0.',
+  'Importe como textura de UI (igual ao mapa acima). Só Blueprint, sem código:': 'Import as a UI texture (same as the map above). Blueprint only, no code:',
+  'No Widget do minimapa, um Canvas Panel com as imagens lado a lado (todas do mesmo tamanho), por cima de uma máscara redonda ou quadrada.': 'In the minimap Widget, a Canvas Panel with the images side by side (all the same size), over a round or square mask.',
+  'A cada Tick, mova esse Canvas Panel pela posição do jogador (U e V da fórmula acima × tamanho total), para o jogador ficar no centro.': 'Every Tick, move that Canvas Panel by the player position (U and V from the formula above × total size), so the player stays in the center.',
+  '{s}_minimapa.json: tamanho do mundo e de cada pedaço em cm (para conferir).': '{s}_minimapa.json: world size and tile size in cm (to double-check).',
   'Ponte': 'Bridge', 'Pontes e cachoeiras automáticas: Rotacao = direção da estrada / do rio; Medida_m = vão da ponte ou altura da queda.': 'Automatic bridges and waterfalls: Rotacao = road / river direction; Medida_m = bridge span or drop height.', 'Ligar cidades': 'Connect cities', 'Pontes e cachoeiras': 'Bridges and waterfalls',
   'Liga capital, cidades e castelos com estradas que seguem o relevo (vilas ficam de fora). Depois marca pontes e cachoeiras.': 'Connects the capital, cities and castles with roads that follow the terrain (villages are left out). Then marks bridges and waterfalls.',
   'Marca uma ponte onde cada estrada cruza um rio e uma cachoeira onde o rio cai forte. Refazer troca só os marcadores automáticos.': 'Marks a bridge where each road crosses a river and a waterfall where the river drops sharply. Redoing replaces only the automatic markers.',
@@ -423,7 +433,6 @@ const I18N = (() => {
       return p.en.replace(/\{s\}/g, () => { const v = m[i++]; return depth < 2 ? find(v, depth + 1) ?? v : v; });
     }
     if (depth > 2) return null;
-    if (/[^.]\.$/.test(k)) { const b = find(k.slice(0, -1), depth + 1); if (b != null) return b.replace(/\.?$/, '.'); } // frase + ponto final
     let m = /^(\d+\) |[a-e]\) )(.+)$/.exec(k); // passo numerado do LEIA-ME: "7) Água"
     if (m) { const b = find(m[2], depth + 1); if (b != null) return m[1] + b; }
     m = /^(.+?)( \([^()]{1,5}\))$/.exec(k);
@@ -433,6 +442,7 @@ const I18N = (() => {
       const parts = k.split(sep), tp = parts.map((p) => find(p, depth + 1));
       if (tp.some((t) => t != null)) return parts.map((p, j) => tp[j] ?? p).join(sep);
     }
+    if (/[^.]\.$/.test(k)) { const b = find(k.slice(0, -1), depth + 1); if (b != null) return b.replace(/\.?$/, '.'); } // frase + ponto final
     m = /^\((.+)\)$/.exec(k);
     if (m) { const b = find(m[1], depth + 1); if (b != null) return '(' + b + ')'; }
     m = /^([.,:;·—–-]+ ?)(.+)$/.exec(k);

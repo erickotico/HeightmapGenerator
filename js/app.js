@@ -803,7 +803,7 @@ function buildExportPanel() {
   $('#exMpq').value = String(S.ex.mpq);
   $('#exName').value = S.ex.name;
   $('#exErode').checked = S.ex.erode; $('#exLayers').checked = S.ex.layers; $('#exRegions').checked = S.ex.regions; $('#exR16').checked = S.ex.r16;
-  $('#exMarkers').checked = S.ex.markers; $('#exRivers').checked = S.ex.rivers !== false; $('#exLakes').checked = S.ex.lakes !== false; $('#exRoads').checked = S.ex.roads !== false; $('#exBiomes').checked = S.ex.biomes !== false; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize);
+  $('#exMarkers').checked = S.ex.markers; $('#exRivers').checked = S.ex.rivers !== false; $('#exLakes').checked = S.ex.lakes !== false; $('#exRoads').checked = S.ex.roads !== false; $('#exBiomes').checked = S.ex.biomes !== false; $('#exVeg').checked = S.ex.veg !== false; $('#exMap').checked = S.ex.map; $('#exMapSize').value = String(S.ex.mapSize); $('#exMinimap').value = String(S.ex.minimap | 0);
   updateWorldSize();
 }
 function updateWorldSize() {
@@ -840,6 +840,7 @@ function bindControls() {
   $('#markerType').onchange = (e) => { S.markerType = e.target.value; UI.rememberMarkerType(); buildMarkerPalette(); };
   $('#btnMapPreview').onclick = openMapPreview;
   $('#exMapSize').onchange = (e) => { S.ex.mapSize = +e.target.value; markDirty(); };
+  $('#exMinimap').onchange = (e) => { S.ex.minimap = +e.target.value; markDirty(); };
   $('#btnErode').onclick = runErosion;
 
   $('#btnGuideLoad').onclick = () => $('#fileGuide').click();
@@ -1386,8 +1387,27 @@ async function doExport() {
         extraFiles.push({ name: 'mapa/' + base + '_mapa_limpo.png', blob: await canvasBlob(renderGameMap(S.ex.mapSize, false)) });
       } finally { busyCount--; setTask('', null); }
     }
+    // minimapa em pedaços: o mapa limpo n×n vezes mais detalhado, cortado em imagens de 1024 px
+    const mmN = S.ex.minimap | 0, mmHalf = ((res - 1) / 2) * mpq * 100;
+    if (mmN > 1) {
+      busyCount++;
+      try {
+        const riv = S.vrivers.length ? Feat.combinedRivers() : S.masks.rivers;
+        for (let ty = 0; ty < mmN; ty++) for (let tx = 0; tx < mmN; tx++) {
+          setTask(`Desenhando o minimapa: ${ty * mmN + tx + 1} de ${mmN * mmN}…`, (ty * mmN + tx) / (mmN * mmN));
+          await new Promise((r) => setTimeout(r, 0));
+          extraFiles.push({ name: `mapa/minimapa/${base}_minimapa_${tx}_${ty}.png`, blob: await canvasBlob(renderGameMap(1024, false, { n: mmN, tx, ty, riv })) });
+        }
+        const tileCm = (mmHalf * 2) / mmN;
+        extraFiles.push({ name: `mapa/minimapa/${base}_minimapa.json`, blob: new Blob([JSON.stringify({
+          mundo: S.ex.name, unidade: 'cm', centroDoMundo: [0, 0], tamanhoDoMundo_cm: +(mmHalf * 2).toFixed(1), canto_noroeste_cm: [-mmHalf, -mmHalf],
+          pedacos: mmN, pixelsPorPedaco: 1024, tamanhoDoPedaco_cm: +tileCm.toFixed(1), metrosPorPixel: +(tileCm / 100 / 1024).toFixed(3),
+          arquivo: `${base}_minimapa_{coluna}_{linha}.png`, coluna: 'oeste → leste (X crescente)', linha: 'norte → sul (Y crescente)'
+        }, null, 2)], { type: 'application/json' }) });
+      } finally { busyCount--; setTask('', null); }
+    }
     const half = ((res - 1) / 2) * mpq * 100;
-    const tpl = I18N.doc(UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, lakes: lakes.length, roads: roads.length, biomes: biomeNames, veg: vegNames }));
+    const tpl = I18N.doc(UE.readmeTemplate({ name: S.ex.name, base, res, mpq, combo, ue: S.ex.ue, map: S.ex.map ? { half, sizeCm: half * 2 } : null, minimap: mmN > 1 ? { n: mmN, tileKm: (half * 2) / mmN / 100000 } : null, markers: withMarkers ? S.markers.length : 0, rivers: rivers.length, lakes: lakes.length, roads: roads.length, biomes: biomeNames, veg: vegNames }));
     const r = await call('export', {
       P: S.P, erode: S.ex.erode, res, worldM: worldM(), detailAmp: S.ex.detail, detailWave: 40,
       r16: S.ex.r16, layers: S.ex.layers, regions: S.ex.regions, regionMasks: S.ex.regions,
@@ -2191,7 +2211,8 @@ function vegGlyphSVG(id, px, variant = 0) {
 const hash01 = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
 // Espalha os glifos numa grade com sorteio fixo (mesma posição sempre). outSize = lado do desenho em px;
 // isLand(ix) opcional para não desenhar no mar.
-function drawVegGlyphs(ctx, outSize, isLand) {
+// ox, oy, vw: pedaço visível (minimapa em pedaços) — desenha só o que cai nele, já deslocado
+function drawVegGlyphs(ctx, outSize, isLand, ox = 0, oy = 0, vw = outSize) {
   const W = S.W, k = W / outSize, base = outSize / 110;
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const v of VEG_TYPES) {
@@ -2201,12 +2222,13 @@ function drawVegGlyphs(ctx, outSize, isLand) {
       const jx = hash01(gx + v.id * 31, gy), jy = hash01(gy + v.id * 17, gx + 7);
       if (v.skip && hash01(gx * 3 + 1, gy * 5 + v.id) < v.skip) continue;
       const x = (gx + 0.15 + jx * 0.7) * step, y = (gy + 0.15 + jy * 0.7) * step;
+      if (x < ox - px || y < oy - px || x > ox + vw + px || y > oy + vw + px) continue;
       const ix = Math.min(W - 1, (y * k) | 0) * W + Math.min(W - 1, (x * k) | 0);
       if (S.veg[ix] !== v.id || (isLand && !isLand(ix))) continue;
       // variação de desenho e de tamanho (±15%) sorteadas por posição
       const paths = variants[(hash01(gx * 7 + 3, gy * 11 + v.id) * variants.length) | 0];
       const sc = (px * (0.85 + 0.3 * hash01(gy * 13 + 5, gx * 3 + v.id))) / 16;
-      ctx.setTransform(sc, 0, 0, sc, x - 8 * sc, y - 15 * sc);
+      ctx.setTransform(sc, 0, 0, sc, x - 8 * sc - ox, y - 15 * sc - oy);
       for (const s of paths) {
         if (s.line) { ctx.strokeStyle = s.c; ctx.lineWidth = s.w; ctx.stroke(s.p); }
         else { ctx.fillStyle = s.c; ctx.fill(s.p); ctx.strokeStyle = '#1d2a14'; ctx.lineWidth = 0.6; ctx.stroke(s.p); }
@@ -2284,34 +2306,37 @@ const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a
 // tom de cada bioma no mapa ilustrado: [cor, quanto mistura]
 const BIOME_TINT = [null, [[240, 190, 100], 0.6], [[120, 150, 92], 0.3], [[246, 246, 244], 0.65], [[96, 82, 76], 0.5]];
 // estradas no mapa ilustrado: contorno claro + traço (trilha tracejada)
-function drawRoads(ctx, size, u) {
+function drawRoads(ctx, size, u, ox = 0, oy = 0) {
   const k = (size - 1) / (S.W - 1);
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const r of S.roads) {
     const g = Feat.roadGrid(r);
     if (g.length < 2) continue;
     const trail = r.kind === 'trilha';
-    ctx.beginPath(); g.forEach((p, i) => (i ? ctx.lineTo(p.x * k, p.y * k) : ctx.moveTo(p.x * k, p.y * k)));
+    ctx.beginPath(); g.forEach((p, i) => (i ? ctx.lineTo(p.x * k - ox, p.y * k - oy) : ctx.moveTo(p.x * k - ox, p.y * k - oy)));
     ctx.setLineDash([]); ctx.strokeStyle = 'rgba(240,230,200,.8)'; ctx.lineWidth = (trail ? 2.6 : 3.8) * u; ctx.stroke();
     ctx.setLineDash(trail ? [4 * u, 3 * u] : []); ctx.strokeStyle = trail ? '#8a5f32' : '#7a4a22'; ctx.lineWidth = (trail ? 1.2 : 2) * u; ctx.stroke();
   }
   ctx.restore();
 }
-function renderGameMap(size, labeled) {
+// tile = {n, tx, ty, riv}: desenha só o pedaço (tx, ty) de um mapa n×n vezes maior (minimapa em pedaços, sem textos)
+function renderGameMap(size, labeled, tile = null) {
   const W = S.W, P = S.P, c = document.createElement('canvas');
   c.width = c.height = size;
+  const full = tile ? size * tile.n : size, ox = tile ? tile.tx * size : 0, oy = tile ? tile.ty * size : 0;
   const ctx = c.getContext('2d'), img = ctx.createImageData(size, size), d = img.data;
-  const k = (W - 1) / (size - 1), hs = new Float32Array(size * size), rv = new Float32Array(size * size), rid = new Uint8Array(size * size);
-  const lake = new Float32Array(size * size), bio = new Uint8Array(size * size), rivAll = S.vrivers.length ? Feat.combinedRivers() : S.masks.rivers;
+  const k = (W - 1) / (full - 1), hs = new Float32Array(size * size), rv = new Float32Array(size * size), rid = new Uint8Array(size * size);
+  const lake = new Float32Array(size * size), bio = new Uint8Array(size * size);
+  const rivAll = (tile && tile.riv) || (S.vrivers.length ? Feat.combinedRivers() : S.masks.rivers);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const i = y * size + x, ni = Math.round(y * k) * W + Math.round(x * k);
-    hs[i] = bilinear(S.H, W, x * k, y * k);
-    rv[i] = bilinear(rivAll, W, x * k, y * k);
+    const i = y * size + x, gx = (x + ox) * k, gy = (y + oy) * k, ni = Math.min(W - 1, Math.round(gy)) * W + Math.min(W - 1, Math.round(gx));
+    hs[i] = bilinear(S.H, W, gx, gy);
+    rv[i] = bilinear(rivAll, W, gx, gy);
     rid[i] = S.regions[ni];
     lake[i] = S.lakeLevel ? S.lakeLevel[ni] : NaN;
     bio[i] = S.biome ? S.biome[ni] : 0;
   }
-  const mpp = worldM() / (size - 1), zf = 2.5, snow = Math.max(P.snowLine, 50);
+  const mpp = worldM() / (full - 1), zf = 2.5, snow = Math.max(P.snowLine, 50);
   let lx = -1, ly = -1, lz = 1.4; { const l = Math.hypot(lx, ly, lz); lx /= l; ly /= l; lz /= l; }
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -2343,8 +2368,9 @@ function renderGameMap(size, labeled) {
   ctx.putImageData(img, 0, 0);
   const u = size / 1024, serif = 'Georgia, "Times New Roman", serif';
   // vegetação pintada vira arvorezinhas (também no minimapa limpo: não é texto)
-  if (S.veg && S.veg.some((v) => v)) drawVegGlyphs(ctx, size, (ix) => S.H[ix] >= 0 && !(S.H[ix] < (S.lakeLevel ? S.lakeLevel[ix] : NaN)));
-  drawRoads(ctx, size, u);
+  if (S.veg && S.veg.some((v) => v)) drawVegGlyphs(ctx, full, (ix) => S.H[ix] >= 0 && !(S.H[ix] < (S.lakeLevel ? S.lakeLevel[ix] : NaN)), ox, oy, size);
+  drawRoads(ctx, full, full / 1024, ox, oy);
+  if (tile) return c; // pedaço do minimapa: sem textos e sem moldura (as bordas se encostam)
   if (labeled) {
     // nomes dos reinos no centro de cada região
     const sum = new Map();
