@@ -289,6 +289,7 @@ const UI = (() => {
         { label: 'Limpar manchinhas dos rios pintados', act: () => Feat.cleanSpecks() },
         { label: 'Estradas entre capital, cidades e castelos', act: () => { setTool('road'); Feat.autoNetwork(); } },
         { label: 'Marcar pontes e cachoeiras', act: () => autoBridgesFalls() },
+        { label: 'Biomas pelo clima…', act: () => openClimate() },
         { label: 'Opções de geração…', act: () => showPanel('generate') },
         '-',
         { label: 'Aplicar erosão', act: runErosion }

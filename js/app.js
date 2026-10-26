@@ -106,6 +106,7 @@ const S = {
   base: null, baseInfo: null, // heightmap importado (0..1) e sua faixa em metros
   sculpt: null, sculptAmt: 20, sculptTarget: 100, // Esculpir: deslocamento em metros
   stamp: { type: 'montanha', size: 1600, height: 600, rot: 0 }, // carimbo de relevo (js/stamps.js)
+  climate: { lat: 'south', temp: 0, wind: 'O', rain: 0, keep: true }, // biomas pelo clima
   ruler: null, riverA: null, // riverA: nascente marcada, esperando o clique do destino
   markers: [], markerSel: null, markerSeq: 0, markerType: 'cidade', markerKind: 'build', // build = construção · env = vegetação/ambiente
   regionDefs: [], regionBrush: 1,
@@ -858,6 +859,7 @@ function bindControls() {
   for (const [id, key] of [['exErode', 'erode'], ['exLayers', 'layers'], ['exRegions', 'regions'], ['exVeg', 'veg'], ['exR16', 'r16'], ['exMarkers', 'markers'], ['exRivers', 'rivers'], ['exLakes', 'lakes'], ['exRoads', 'roads'], ['exBiomes', 'biomes'], ['exMap', 'map']]) $('#' + id).onchange = (e) => { S.ex[key] = e.target.checked; };
   $('#vegShow').onchange = (e) => { S.showVeg = e.target.checked; scheduleVegDraw(); };
   $('#btnBiomeFromVeg').onclick = biomesFromVeg;
+  $('#btnBiomeClimate').onclick = openClimate;
   $('#btnExport').onclick = doExport;
   $('#btnGuide').onclick = openGuide;
   $('#modalClose').onclick = () => { $('#modal').hidden = true; };
@@ -1207,7 +1209,7 @@ function removeBase() {
 // ================= projeto: salvar / abrir / automático =================
 async function serializeProject() {
   const header = {
-    format: 'forja-mundos', version: 6, W: S.W, base: S.base ? S.baseInfo : null, sculpt: true, veg: true, biome: true, ...Feat.serialize(), markers: S.markers, markerSeq: S.markerSeq, P: S.P, ex: S.ex, regionDefs: S.regionDefs, layers: FLOAT_LAYERS,
+    format: 'forja-mundos', version: 6, W: S.W, base: S.base ? S.baseInfo : null, sculpt: true, veg: true, biome: true, ...Feat.serialize(), markers: S.markers, markerSeq: S.markerSeq, P: S.P, ex: S.ex, climate: S.climate, regionDefs: S.regionDefs, layers: FLOAT_LAYERS,
     guide: S.guide.dataURL ? { dataURL: S.guide.dataURL, fit: S.guide.fit, opacity: S.guide.opacity, visible: S.guide.visible } : null,
     savedAt: new Date().toISOString()
   };
@@ -1268,6 +1270,7 @@ async function deserializeProject(blob) {
   S.P = { ...DEFAULT_P, ...header.P };
   S.ex = { ...S.ex, ...header.ex };
   S.regionDefs = header.regionDefs || [];
+  if (header.climate) S.climate = { ...S.climate, ...header.climate };
   S.markers = header.markers || []; S.markerSeq = header.markerSeq || S.markers.length; S.markerSel = null;
   S.regionBrush = 1; S.undo = []; S.redo = []; S.H = null; S.lastExport = null;
   setupCanvases();
@@ -2118,6 +2121,113 @@ function biomesFromVeg() {
   afterMaskChange('biome'); buildBiomeList();
   toast('Biomas preenchidos a partir da vegetação. Ctrl+Z desfaz.');
 }
+// ---- biomas pelo clima ----
+// Sugestão a partir do que o mapa já tem. Temperatura = faixa norte/sul + ajuste geral − 6,5 °C a cada 1000 m.
+// Umidade = o ar sai do mar carregado e anda na direção do vento: em terra chove um pouco a cada passo e muito
+// onde o terreno sobe (lado da montanha que pega o vento); o que passa da serra chega seco (sombra de chuva).
+// Gelo abaixo de −3 °C · deserto quente e seco · floresta úmida · o resto fica campo. Vulcânico nunca é trocado.
+const CLIMATE_WIND = { N: [0, 1], NE: [-1, 1], L: [-1, 0], SE: [-1, -1], S: [0, -1], SO: [1, -1], O: [1, 0], NO: [1, 1] }; // de onde vem → para onde sopra
+const CL_ICE_C = -3, CL_DESERT_C = 16, CL_DESERT_M = 0.3, CL_FOREST_C = 3, CL_FOREST_M = 0.55, CL_LAPSE = 6.5;
+function latTemp(v, lat) {
+  if (lat === 'north') return 28 - 34 * v;
+  if (lat === 'equator') return 30 - 38 * Math.pow(Math.abs(2 * v - 1), 1.2);
+  if (lat === 'flat') return 15;
+  return -6 + 34 * v; // 'south': quente embaixo (sul), frio em cima (norte)
+}
+function vnoise01(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash01(ix, iy), b = hash01(ix + 1, iy), c = hash01(ix, iy + 1), d = hash01(ix + 1, iy + 1);
+  return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
+}
+function climateBiomes(c) {
+  if (!S.H) return;
+  const W = S.W, n = Math.min(W, 512), k = (W - 1) / (n - 1), cellM = worldM() / (n - 1);
+  const h = new Float32Array(n * n), wet = new Uint8Array(n * n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = y * n + x, gx = x * k, gy = y * k, ni = Math.round(gy) * W + Math.round(gx);
+    h[i] = bilinear(S.H, W, gx, gy);
+    wet[i] = h[i] < 0 || (S.lakeLevel && S.H[ni] < S.lakeLevel[ni]) ? 1 : 0;
+  }
+  // varredura na direção do vento: cada célula recebe o ar das vizinhas de onde o vento vem
+  const [dx, dy] = CLIMATE_WIND[c.wind] || CLIMATE_WIND.O, order = new Uint32Array(n * n);
+  for (let i = 0; i < n * n; i++) order[i] = i;
+  const proj = (i) => (i % n) * dx + ((i / n) | 0) * dy;
+  order.sort((a, b) => proj(a) - proj(b));
+  const q = new Float32Array(n * n), rain = new Float32Array(n * n), drizzle = 1.6 / n;
+  for (const i of order) {
+    const x = i % n, y = (i / n) | 0, ups = [[x - dx, y - dy]];
+    if (dx && dy) ups.push([x - dx, y], [x, y - dy]);
+    let qin = 0, hin = 0, cnt = 0;
+    for (const [ux, uy] of ups) if (ux >= 0 && uy >= 0 && ux < n && uy < n) { const u = uy * n + ux; qin += q[u]; hin += h[u]; cnt++; }
+    if (!cnt) { qin = 0.8; hin = h[i]; } else { qin /= cnt; hin /= cnt; }
+    if (wet[i]) { q[i] = Math.min(1, qin + 0.08); continue; }
+    const rise = Math.max(0, h[i] - Math.max(0, hin)) / (cellM * Math.hypot(dx, dy)), r = Math.min(qin * 0.5, qin * (drizzle + 3 * rise));
+    q[i] = qin - r; rain[i] = r;
+  }
+  // umidade: chuva (normalizada pela garoa de terreno plano) + um pouco por estar perto de água, suavizada
+  const near = blurArr(Float32Array.from(wet), n, Math.max(2, n / 40)), M0 = new Float32Array(n * n);
+  for (let i = 0; i < n * n; i++) M0[i] = rain[i] / drizzle + 0.3 * near[i];
+  const M = blurArr(M0, n, 2);
+  snapshot(['biome']);
+  let changed = 0;
+  for (let y = 0; y < W; y++) {
+    const v = y / (W - 1), base = latTemp(v, c.lat) + c.temp;
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x, hh = S.H[i];
+      if (S.biome[i] === 4 || (c.keep && S.biome[i])) continue;
+      if (hh < 0 || (S.lakeLevel && hh < S.lakeLevel[i])) { if (!c.keep && S.biome[i]) { S.biome[i] = 0; changed++; } continue; }
+      const nz = vnoise01(x / W * 24, y / W * 24) - 0.5;
+      const T = base - (CL_LAPSE * Math.max(0, hh)) / 1000 + nz * 4;
+      const m = bilinear(M, n, x / k, y / k) + c.rain + nz * 0.12;
+      const b = T < CL_ICE_C ? 3 : T > CL_DESERT_C && m < CL_DESERT_M ? 1 : T > CL_FOREST_C && m > CL_FOREST_M ? 2 : 0;
+      if (b !== S.biome[i]) { S.biome[i] = b; changed++; }
+    }
+  }
+  afterMaskChange('biome'); buildBiomeList(); markDirty();
+  toast(changed ? 'Biomas sugeridos pelo clima. Retoque com o pincel; Ctrl+Z desfaz.' : 'Nada mudou: todo o mapa já tinha bioma (desmarque "Manter os biomas que já pintei").');
+}
+// Média de caixa separável (3 passadas ≈ gaussiana), para o mapa de umidade em baixa resolução.
+function blurArr(a, n, r) {
+  r = Math.max(1, Math.round(r));
+  let src = a;
+  for (let pass = 0; pass < 3; pass++) {
+    const tmp = new Float32Array(n * n), out = new Float32Array(n * n);
+    for (let y = 0; y < n; y++) { let s = 0; for (let x = -r; x <= r; x++) s += src[y * n + clamp(x, 0, n - 1)]; for (let x = 0; x < n; x++) { tmp[y * n + x] = s / (2 * r + 1); s += src[y * n + clamp(x + r + 1, 0, n - 1)] - src[y * n + clamp(x - r, 0, n - 1)]; } }
+    for (let x = 0; x < n; x++) { let s = 0; for (let y = -r; y <= r; y++) s += tmp[clamp(y, 0, n - 1) * n + x]; for (let y = 0; y < n; y++) { out[y * n + x] = s / (2 * r + 1); s += tmp[clamp(y + r + 1, 0, n - 1) * n + x] - tmp[clamp(y - r, 0, n - 1) * n + x]; } }
+    src = out;
+  }
+  return src;
+}
+function openClimate() {
+  if (!S.H) return;
+  const c = S.climate;
+  const wind = Object.keys(CLIMATE_WIND).map((k) => `<option value="${k}">${{ N: 'Norte', NE: 'Nordeste', L: 'Leste', SE: 'Sudeste', S: 'Sul', SO: 'Sudoeste', O: 'Oeste', NO: 'Noroeste' }[k]}</option>`).join('');
+  $('#modalBody').innerHTML = `<h2>Biomas pelo clima</h2>
+    <p class="hint">A Forja calcula o clima com o que o mapa já tem: a altitude (mais alto = mais frio), a posição norte/sul e o vento.
+      A chuva cai no lado da montanha que recebe o vento; o outro lado e o interior longe do mar ficam secos.
+      O resultado vai para a camada Biomas e você retoca com o pincel. Vulcânico nunca é trocado. Ctrl+Z desfaz.</p>
+    <div class="cl-form">
+      <label class="row">Onde é mais quente <select id="clLat">
+        <option value="south">No sul (topo do mapa = norte frio)</option><option value="north">No norte (topo quente, sul frio)</option>
+        <option value="equator">No meio do mapa (frio no norte e no sul)</option><option value="flat">Igual no mapa todo</option></select></label>
+      <label class="row">Temperatura geral <input type="range" id="clTemp" min="-15" max="15" step="1"><output id="clTempOut"></output></label>
+      <label class="row">O vento vem do <select id="clWind">${wind}</select></label>
+      <label class="row">Chuva geral <input type="range" id="clRain" min="-0.5" max="0.5" step="0.05"><output id="clRainOut"></output></label>
+      <label class="check"><input type="checkbox" id="clKeep"> Manter os biomas que já pintei</label>
+    </div>
+    <div class="btnrow"><button id="clApply" class="accent">Aplicar</button></div>`;
+  $('#clLat').value = c.lat; $('#clTemp').value = c.temp; $('#clWind').value = c.wind; $('#clRain').value = c.rain; $('#clKeep').checked = c.keep;
+  const outs = () => { $('#clTempOut').textContent = (c.temp > 0 ? '+' : '') + fmt(c.temp) + ' °C'; $('#clRainOut').textContent = c.rain === 0 ? I18N.tr('normal') : c.rain > 0 ? I18N.tr('mais úmido') + ' +' + fmt(c.rain * 100) + '%' : I18N.tr('mais seco') + ' ' + fmt(c.rain * 100) + '%'; };
+  $('#clLat').onchange = (e) => { c.lat = e.target.value; markDirty(); };
+  $('#clWind').onchange = (e) => { c.wind = e.target.value; markDirty(); };
+  $('#clTemp').oninput = (e) => { c.temp = +e.target.value; outs(); markDirty(); };
+  $('#clRain').oninput = (e) => { c.rain = +e.target.value; outs(); markDirty(); };
+  $('#clKeep').onchange = (e) => { c.keep = e.target.checked; markDirty(); };
+  $('#clApply').onclick = () => { $('#modal').hidden = true; if (S.active !== 'biome') setActive('biome'); UI.showPanel('biomes'); climateBiomes(c); };
+  outs();
+  $('#modal').hidden = false;
+}
+
 // PNG RGBA de 8 bits feito à mão: o canvas pré-multiplica o alfa e estragaria os canais R, G e B onde A = 0.
 async function encodePNGRGBA(w, h, rgba) {
   const raw = new Uint8Array(h * (w * 4 + 1));

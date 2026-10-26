@@ -233,6 +233,9 @@ details.group summary { cursor: pointer; font-size: 12px; text-transform: upperc
 #stampSvg .st-sh { fill: rgba(255, 211, 107, .12); }
 #stampSvg .st-ln { fill: none; stroke: #ffd36b; stroke-width: 1.5; }
 .num-m { width: 78px; }
+.cl-form { display: grid; gap: 8px; margin: 10px 0 14px; }
+.cl-form .row { display: grid; grid-template-columns: 170px 1fr auto; align-items: center; gap: 8px; }
+.cl-form output { min-width: 90px; color: var(--muted); }
 #featSvg .ft-pt { stroke: #fff; stroke-width: 1.5; }
 #featSvg .ft-pt.sel { stroke: #ffd36b; stroke-width: 2; }
 #rulerSvg .rl-line { stroke: #ffd36b; stroke-width: 2; }
