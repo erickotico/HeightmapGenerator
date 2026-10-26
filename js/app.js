@@ -867,6 +867,7 @@ function bindControls() {
 
   // Novo / Abrir / Salvar / Desfazer / resolução / visualização ficam nos menus (js/ui.js)
   $$('.tabs button').forEach((b) => { b.onclick = () => setMode(b.dataset.view); });
+  $('#atlasCrumb').onclick = () => setMode('atlas');
   $('#btnCam3d').onclick = () => t3d.resetCamera();
   $('#fileProject').onchange = (e) => {
     const f = e.target.files[0]; e.target.value = '';
@@ -906,7 +907,9 @@ function setMode(m) {
   $$('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === m));
   $('#viewport').hidden = m !== '2d';
   $('#view3d').hidden = m !== '3d';
-  if (m === '3d') update3D(); else fitViewIfNeeded();
+  $('#atlasView').hidden = m !== 'atlas';
+  if (m === '3d') update3D(); else if (m === 'atlas') Atlas.show(); else fitViewIfNeeded();
+  Atlas.crumb();
 }
 function fitViewIfNeeded() { if (!S.view.s || S.view.s === 1) fitView(); }
 
@@ -1320,7 +1323,9 @@ async function autosave() {
   if (!S.dirty || autosaving) return;
   autosaving = true; S.dirty = false;
   try {
-    await idbSet('autosave', await serializeProject());
+    const blob = await serializeProject();
+    await idbSet('autosave', blob);
+    await Atlas.onAutosave(blob);
     $('#stSave').textContent = 'Salvo automaticamente às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   } catch (err) {
     $('#stSave').textContent = 'Salvamento automático indisponível — use Salvar';
@@ -2615,6 +2620,7 @@ function refreshLanguage() {
     if (saved) { await deserializeProject(saved); restored = true; toast('Seu último trabalho foi restaurado.'); }
   } catch (err) { console.warn('Autosave não restaurado:', err); }
   if (!restored) { await newProject(false); S.dirty = false; }
+  await Atlas.restore();
   setInterval(autosave, 20000);
   window.addEventListener('beforeunload', () => { if (S.dirty) autosave(); });
 })();

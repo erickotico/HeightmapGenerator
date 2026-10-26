@@ -16,7 +16,9 @@
     <div class="tabs">
       <button data-view="2d" class="active">Mapa 2D</button>
       <button data-view="3d">Prévia 3D</button>
+      <button data-view="atlas" title="Vários continentes num mundo só">Atlas</button>
     </div>
+    <button id="atlasCrumb" class="crumb" hidden title="Voltar ao atlas"></button>
     <button id="btnLang" class="lang-btn" title="Idioma / Language"></button>
     <button id="btnGuide" class="accent">Guia do Unreal</button>
   </div>
@@ -84,6 +86,7 @@
       <div id="walkHud" hidden></div>
       <div id="no3d" hidden>Seu navegador não suporta WebGL2. Use o Chrome ou o Edge atualizados.</div>
     </div>
+    <div id="atlasView" hidden></div>
   </section>
 
   <div id="dockResizer" title="Arraste para mudar a largura dos painéis"></div>
@@ -257,6 +260,7 @@
 <script src="js/rivers.js"></script>
 <script src="js/features.js"></script>
 <script src="js/stamps.js"></script>
+<script src="js/atlas.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 </body>

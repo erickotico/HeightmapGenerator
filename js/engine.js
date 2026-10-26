@@ -1151,6 +1151,15 @@ function ForjaEngine() {
         if (!S.base) throw new Error('Gere o terreno primeiro.');
         const path = roadRoute(current(), S.W, S.cell, m.ax, m.ay, m.bx, m.by, m);
         post({ type: 'road', id: m.id, path }, path ? [path.buffer] : []);
+      } else if (m.type === 'atlasExport') {
+        // Atlas: exporta o terreno juntado (todos os continentes) pelo mesmo caminho, com o motor apontando
+        // para ele só durante a exportação; depois volta para o continente que estava aberto.
+        const keep = { base: S.base, eroded: S.eroded, W: S.W, worldM: S.worldM, cell: S.cell, roadMask: S.roadMask, P: S.P };
+        try {
+          S.base = m.G; S.eroded = null; S.W = m.WG; S.worldM = m.worldM; S.cell = m.worldM / m.WG; S.roadMask = null; S.P = m.P;
+          const r = await doExport(m);
+          post({ type: 'exported', id: m.id, ...r });
+        } finally { Object.assign(S, keep); }
       } else if (m.type === 'export') {
         S.P = m.P;
         if (!S.base) throw new Error('Gere o terreno antes de exportar.');
