@@ -234,6 +234,7 @@ details.group summary { cursor: pointer; font-size: 12px; text-transform: upperc
 #stampSvg .st-ln { fill: none; stroke: #ffd36b; stroke-width: 1.5; }
 .num-m { width: 78px; }
 #atlasView { position: absolute; inset: 0; overflow: auto; background: var(--bg); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+#atlasView[hidden] { display: none; }
 .at-intro { max-width: 640px; margin: 40px auto; line-height: 1.5; }
 .at-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .at-bar input[type=text] { width: 180px; }
