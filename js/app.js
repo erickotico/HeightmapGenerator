@@ -953,8 +953,9 @@ function changeWorkRes(B) {
 
 // ================= imagem-guia =================
 function loadGuideFile(file) {
+  if (!confirm('Carregar uma imagem-guia começa um projeto novo: tudo o que está no mapa é apagado e NÃO dá para desfazer.\nSalve antes (Arquivo → Salvar) se quiser guardar o mundo atual.')) return;
   const fr = new FileReader();
-  fr.onload = () => setGuide(fr.result, {}).then(() => { markDirty(); toast('Imagem carregada. Pinte por cima ou use "Converter".'); });
+  fr.onload = () => { startFresh(); setGuide(fr.result, {}).then(() => { markDirty(); scheduleCompose(0); toast('Imagem-guia carregada num projeto novo. Pinte por cima ou use "Converter".'); }); };
   fr.readAsDataURL(file);
 }
 function setGuide(dataURL, opts) {
@@ -1070,12 +1071,7 @@ async function openImageDialog(file) {
     </div>`;
   $('#modal').hidden = false;
   const close = () => { $('#modal').hidden = true; URL.revokeObjectURL(url); };
-  $('#imgAsGuide').onclick = () => {
-    close();
-    const fr = new FileReader();
-    fr.onload = () => setGuide(fr.result, {}).then(() => { markDirty(); toast('Imagem-guia carregada. Pinte por cima ou use "Converter".'); });
-    fr.readAsDataURL(file);
-  };
+  $('#imgAsGuide').onclick = () => { close(); loadGuideFile(file); };
   $('#imgAsHeight').onclick = async () => {
     const min = +$('#impMin').value, max = +$('#impMax').value;
     if (!(max > min)) { toast('A altura do branco precisa ser maior que a do preto.', true); return; }
@@ -1174,17 +1170,14 @@ function imageToSquare(img, W) {
 }
 
 async function importHeightmap(file, min, max) {
-  if (S.base && !confirm('Substituir o heightmap base atual?')) return;
+  if (!confirm('Importar um heightmap começa um projeto novo: tudo o que está no mapa é apagado e NÃO dá para desfazer.\nSalve antes (Arquivo → Salvar) se quiser guardar o mundo atual.')) return;
   busyCount++; setTask('Lendo heightmap…', null);
   let img;
   try { img = await decodeHeightImage(file); } finally { busyCount--; setTask('', null); }
+  startFresh();
   S.base = imageToSquare(img, S.W);
   S.baseInfo = { name: file.name, min, max, bits: img.bits, srcW: img.w, srcH: img.h };
-  // O heightmap já traz o relevo: as camadas de relevo pintadas antes somariam em dobro, então começam vazias
-  // (Ctrl+Z traz de volta). Terra/Mar acompanha o heightmap: se remover a base depois, a costa continua igual.
-  snapshot([...FLOAT_LAYERS, 'sculpt']);
-  for (const id of ['mountains', 'hills', 'plateau', 'flatten', 'rivers']) S.masks[id].fill(0);
-  S.sculpt.fill(0);
+  // Terra/Mar acompanha o heightmap: se remover a base depois, a costa continua igual.
   const span = max - min, land = S.masks.land;
   for (let i = 0; i < land.length; i++) land[i] = min + S.base[i] * span > 0 ? 1 : 0;
   if (img.w === img.h && UE.RESOLUTIONS.some((r) => r.res === img.w)) { S.ex.res = img.w; buildExportPanel(); }
@@ -1332,24 +1325,30 @@ async function autosave() {
   } finally { autosaving = false; }
 }
 
-async function newProject(ask = true) {
-  if (ask && !confirm('Começar um mundo novo? O atual some (salve antes se quiser guardar).')) return;
+// Projeto novo: apaga tudo do mapa E o histórico do Ctrl+Z (não dá para voltar ao mundo anterior).
+// Usado pelo Novo mundo, pelos modelos de mundo, por carregar imagem-guia e por importar heightmap.
+function startFresh() {
   S.masks = emptyMasks(S.W);
   S.regions = new Uint8Array(S.W * S.W);
   S.sculpt = new Float32Array(S.W * S.W);
   S.veg = new Uint8Array(S.W * S.W); scheduleVegDraw(); buildVegList();
   S.biome = new Uint8Array(S.W * S.W); buildBiomeList();
   Feat.load({});
-  S.ruler = null;
+  S.ruler = null; renderRuler();
   S.markers = []; S.markerSel = null; S.markerSeq = 0; renderMarkers(); buildMarkerList();
   S.regionDefs = [1, 2, 3, 4].map((n) => ({ name: I18N.tr(`Região ${n}`), color: REGION_COLORS[n - 1] }));
-  S.regionBrush = 1; S.undo = []; S.redo = []; S.lastExport = null;
+  S.regionBrush = 1; buildRegionList();
+  S.undo = []; S.redo = []; S.lastExport = null;
   S.base = null; S.baseInfo = null; updateBasePanel();
   clearGuide();
   setupCanvases(); setActive('land'); drawOverlay();
+}
+async function newProject(ask = true) {
+  if (ask && !confirm('Começar um mundo novo? O atual some (salve antes se quiser guardar).')) return;
+  startFresh();
   await autoLand();
   await autoRelief();
-  S.undo = [];
+  S.undo = []; S.redo = [];
 }
 
 // ================= exportação =================
@@ -1666,25 +1665,17 @@ function buildPresets() {
 }
 async function applyPreset() {
   const pr = PRESETS.find((p) => p.id === $('#presetSel').value);
-  if (!confirm(`Aplicar o modelo "${pr.name}"?\nO mapa começa do zero: terra, relevo, rios, lagos, estradas, marcadores, regiões, vegetação e biomas são apagados (só a imagem-guia fica).\nCtrl+Z desfaz; "Restaurar padrões" volta os ajustes.`)) return;
-  // modelo novo = mapa novo: tudo o que estava em cima do terreno antigo some junto (não faria sentido no relevo novo)
-  snapshot([...FLOAT_LAYERS, 'sculpt', 'base', 'regions', 'veg', 'biome', 'markers', 'vrivers', 'roads']);
+  if (!confirm(`Aplicar o modelo "${pr.name}"?\nIsso começa um projeto novo: tudo o que está no mapa (e a imagem-guia) é apagado e NÃO dá para desfazer.\nSalve antes (Arquivo → Salvar) se quiser guardar o mundo atual.`)) return;
+  startFresh();
   S.P = { ...DEFAULT_P, seed: S.P.seed, ...pr.P };
   refreshParamInputs(); sync3DParams();
-  for (const id of FLOAT_LAYERS) S.masks[id].fill(0);
-  S.sculpt.fill(0); S.base = null; updateBasePanel();
-  S.regions.fill(0); buildRegionList();
-  S.veg.fill(0); scheduleVegDraw(); buildVegList();
-  S.biome.fill(0); buildBiomeList();
-  S.markers = []; S.markerSel = null; renderMarkers(); buildMarkerList();
-  S.vrivers = []; S.roads = []; S.featSel = null; S.riverA = null; S.roadDraft = null; Feat.buildList(); Feat.render();
-  S.ruler = null; renderRuler();
   $('#autoStyle').value = pr.style; $('#autoCoverage').value = pr.coverage; updateCoverageOut();
   try {
     const a = await call('autoLand', { W: S.W, P: S.P, style: pr.style, coverage: pr.coverage });
     S.masks.land = a.mask;
     const r = await call('autoRelief', { W: S.W, P: S.P, land: S.masks.land, amount: pr.relief });
     S.masks.mountains = r.mountains; S.masks.hills = r.hills;
+    S.undo = []; S.redo = [];
     drawOverlay(); markDirty(); scheduleCompose(0);
     toast(`Modelo "${pr.name}" aplicado. Troque a semente para ver outra variação.`);
   } catch (err) { showError(err); }
