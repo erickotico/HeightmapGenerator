@@ -229,6 +229,10 @@ details.group summary { cursor: pointer; font-size: 12px; text-transform: upperc
 #featSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .lang-btn { font-size: 12px; padding: 4px 8px; color: var(--muted); }
 .lang-btn .on { color: var(--accent); font-weight: 700; }
+#stampSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+#stampSvg .st-sh { fill: rgba(255, 211, 107, .12); }
+#stampSvg .st-ln { fill: none; stroke: #ffd36b; stroke-width: 1.5; }
+.num-m { width: 78px; }
 #featSvg .ft-pt { stroke: #fff; stroke-width: 1.5; }
 #featSvg .ft-pt.sel { stroke: #ffd36b; stroke-width: 2; }
 #rulerSvg .rl-line { stroke: #ffd36b; stroke-width: 2; }

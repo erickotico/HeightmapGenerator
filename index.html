@@ -32,6 +32,10 @@
   <label class="opt" data-opt="intensity" title="Valor que o pincel e o balde aplicam. Ex.: montanhas com intensidade 0,5 ficam com metade da altura máxima.">Intensidade <input type="range" id="brushIntensity" min="0.05" max="1" step="0.05" value="1"><output id="brushIntensityOut"></output></label>
   <label class="opt" data-opt="sculptAmt" title="Quanto cada pincelada de Elevar/Rebaixar sobe ou desce o terreno, no centro do pincel.">Metros por pincelada <input type="range" id="sculptAmt" min="1" max="200" step="1" value="20"><output id="sculptAmtOut"></output></label>
   <label class="opt" data-opt="sculptTarget" title="Altura que o Nivelar aplica. O Conta-gotas pega a altura de um ponto do mapa.">Altura alvo (m) <input type="number" id="sculptTarget" value="100" step="1"></label>
+  <label class="opt" data-opt="stamp">Forma <select id="stampType"></select></label>
+  <label class="opt" data-opt="stamp" title="Diâmetro do carimbo ([ e ] mudam).">Tamanho (m) <input type="number" id="stampSize" min="20" step="50" class="num-m"></label>
+  <label class="opt" data-opt="stamp"><span id="stampHLabel">Altura (m)</span> <input type="number" id="stampHeight" min="1" step="10" class="num-s"></label>
+  <label class="opt" data-opt="stamp" title="Giro em graus (, e . ou Shift+roda do mouse).">Giro (°) <input type="number" id="stampRot" step="15" class="num-s"></label>
   <label class="opt" data-opt="fill">Tolerância <input type="range" id="fillTol" min="0" max="100" value="25"><output id="fillTolOut"></output></label>
   <label class="opt" data-opt="fill"><input type="checkbox" id="fillGuide" checked> Usar contornos da imagem-guia</label>
   <label class="opt" data-opt="marker">Tipo <select id="markerType"></select></label>
@@ -65,6 +69,7 @@
       <svg id="markerSvg"></svg>
       <svg id="rulerSvg" hidden></svg>
       <svg id="featSvg"></svg>
+      <svg id="stampSvg"></svg>
       <div id="scaleBar"><div id="scaleBarLine"></div><span id="scaleBarText"></span></div>
       <div id="viewHelp">Esquerdo: usar ferramenta · Shift: apagar · Direito/meio ou Espaço: mover · Roda: zoom · F: enquadrar</div>
     </div>
@@ -247,6 +252,7 @@
 <script src="js/unreal.js"></script>
 <script src="js/rivers.js"></script>
 <script src="js/features.js"></script>
+<script src="js/stamps.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 </body>

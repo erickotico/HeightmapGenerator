@@ -151,6 +151,13 @@ const I18N_EN = {
   // ---------- marcadores ----------
   'Capital': 'Capital', 'Cidade': 'City', 'Vila': 'Village', 'Castelo / Fortaleza': 'Castle / Fortress', 'Porto': 'Port', 'Templo / Santuário': 'Temple / Shrine', 'Masmorra': 'Dungeon',
   'Caverna / Mina': 'Cave / Mine', 'Ruínas': 'Ruins', 'Ponto de interesse': 'Point of interest', 'Árvore ancestral': 'Ancient tree', 'Bosque sagrado': 'Sacred grove', 'Fonte / Nascente': 'Spring / Fountain',
+  'Carimbo de relevo': 'Terrain stamp', 'Pincel de erosão': 'Erosion brush', 'Montanha': 'Mountain', 'Vulcão': 'Volcano', 'Cratera': 'Crater', 'Cânion': 'Canyon', 'Platô': 'Plateau', 'Ilha': 'Island',
+  'Forma': 'Shape', 'Tamanho (m)': 'Size (m)', 'Altura (m)': 'Height (m)', 'Profundidade (m)': 'Depth (m)', 'Altura acima do mar (m)': 'Height above sea (m)', 'Giro (°)': 'Rotation (°)',
+  'Diâmetro do carimbo ([ e ] mudam).': 'Stamp diameter ([ and ] change it).', 'Giro em graus (, e . ou Shift+roda do mouse).': 'Rotation in degrees (, and . or Shift+mouse wheel).',
+  'Clique para carimbar. [ ] tamanho · , . ou Shift+roda giram. Vai para a camada Esculpir (Ctrl+Z desfaz).': 'Click to stamp. [ ] size · , . or Shift+wheel rotate. Goes to the Sculpt layer (Ctrl+Z undoes).',
+  'Pinte sobre as montanhas e solte: a chuva escava ravinas só ali. Força = quanta chuva.': 'Paint over the mountains and release: rain carves gullies only there. Strength = how much rain.',
+  '{s} carimbado(a). Ctrl+Z desfaz; o resultado fica na camada Esculpir.': '{s} stamped. Ctrl+Z undoes; the result stays in the Sculpt layer.',
+  'Nada para erodir aí: pinte sobre terra (acima do mar).': 'Nothing to erode there: paint over land (above sea level).',
   'Ponte': 'Bridge', 'Pontes e cachoeiras automáticas: Rotacao = direção da estrada / do rio; Medida_m = vão da ponte ou altura da queda.': 'Automatic bridges and waterfalls: Rotacao = road / river direction; Medida_m = bridge span or drop height.', 'Ligar cidades': 'Connect cities', 'Pontes e cachoeiras': 'Bridges and waterfalls',
   'Liga capital, cidades e castelos com estradas que seguem o relevo (vilas ficam de fora). Depois marca pontes e cachoeiras.': 'Connects the capital, cities and castles with roads that follow the terrain (villages are left out). Then marks bridges and waterfalls.',
   'Marca uma ponte onde cada estrada cruza um rio e uma cachoeira onde o rio cai forte. Refazer troca só os marcadores automáticos.': 'Marks a bridge where each road crosses a river and a waterfall where the river drops sharply. Redoing replaces only the automatic markers.',

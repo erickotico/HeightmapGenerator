@@ -105,6 +105,7 @@ const S = {
   masks: {}, regions: null,
   base: null, baseInfo: null, // heightmap importado (0..1) e sua faixa em metros
   sculpt: null, sculptAmt: 20, sculptTarget: 100, // Esculpir: deslocamento em metros
+  stamp: { type: 'montanha', size: 1600, height: 600, rot: 0 }, // carimbo de relevo (js/stamps.js)
   ruler: null, riverA: null, // riverA: nascente marcada, esperando o clique do destino
   markers: [], markerSel: null, markerSeq: 0, markerType: 'cidade', markerKind: 'build', // build = construção · env = vegetação/ambiente
   regionDefs: [], regionBrush: 1,
@@ -204,7 +205,7 @@ function applyView() {
   stage.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
   const pix = v.s >= 1.5 ? 'pixelated' : 'auto';
   for (const c of [cvT, cvG, cvO]) c.style.imageRendering = pix;
-  updateCursorSize(); renderRuler(); renderMarkers(); Feat.render(); updateScaleBar();
+  updateCursorSize(); renderRuler(); renderMarkers(); Feat.render(); Stamps.preview(); updateScaleBar();
 }
 function fitView() {
   const r = vp.getBoundingClientRect();
@@ -335,6 +336,16 @@ function dab(cx, cy, tool) {
   const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(W - 1, Math.ceil(cx + r));
   const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(W - 1, Math.ceil(cy + r));
   if (x0 > x1 || y0 > y1) return;
+  if (tool === 'erodeb') { // pincel de erosão: só marca a área; a chuva cai quando solta o mouse
+    const m = stroke.erode, b = stroke.box;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
+      if (d < 1) { const i = y * W + x, v = (1 - smooth01((d - 0.5) / 0.5)) * 255; if (v > m[i]) m[i] = v; }
+    }
+    b[0] = Math.min(b[0], x0); b[1] = Math.min(b[1], y0); b[2] = Math.max(b[2], x1); b[3] = Math.max(b[3], y1);
+    octx.fillStyle = 'rgba(255,190,90,.22)'; octx.beginPath(); octx.arc(cx, cy, r, 0, Math.PI * 2); octx.fill();
+    return;
+  }
   const hard = S.brush.hardness, st = S.brush.strength;
   const isId = isIdLayer(S.active), isM = S.active === 'sculpt', arr = getArr(S.active), idv = idBrush();
   const target = tool === 'erase' ? 0 : S.brush.intensity;
@@ -387,6 +398,12 @@ function startTool(p, shift) {
     afterMaskChange(S.active);
     return;
   }
+  if (tool === 'erodeb') {
+    if (!inside || !S.H) return;
+    stroke = { last: p, tool, erode: new Uint8Array(S.W * S.W), box: [x, y, x, y] };
+    dab(p.x, p.y, tool);
+    return;
+  }
   snapshot([S.active]);
   stroke = { last: p, tool, base0: S.active === 'sculpt' ? S.undo[S.undo.length - 1].sculpt : null };
   dab(p.x, p.y, tool);
@@ -398,10 +415,28 @@ function strokeTo(p) {
   stroke.last = p;
 }
 function endStroke() {
+  const st = stroke;
   stroke = null;
+  if (st.tool === 'erodeb') { erosionBrush(st); return; }
   flushOverlay(); markDirty();
   if (S.active === 'veg') { scheduleVegDraw(); buildVegList(); }
   else if (!isIdLayer(S.active)) scheduleCompose(0);
+}
+
+// Pincel de erosão: manda a área pintada para o motor e soma o resultado (o que a chuva escavou e depositou)
+// na camada Esculpir — fica com desfazer e sobrevive a qualquer recomposição.
+async function erosionBrush(st) {
+  const [x0, y0, x1, y1] = st.box, w = x1 - x0 + 1, h = y1 - y0 + 1, W = S.W, mask = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = st.erode[(y + y0) * W + x + x0] / 255;
+  try {
+    await flushCompose();
+    const r = await call('erodeLocal', { x0, y0, w, h, mask, strength: S.brush.strength, P: S.P });
+    if (r.side) {
+      snapshot(['sculpt']);
+      for (let y = 0; y < r.side; y++) for (let x = 0; x < r.side; x++) S.sculpt[(r.y0 + y) * W + r.x0 + x] += r.delta[y * r.side + x];
+    } else toast('Nada para erodir aí: pinte sobre terra (acima do mar).');
+    afterMaskChange('sculpt');
+  } catch (err) { showError(err); drawOverlay(); }
 }
 
 // Balde: preenche a área contínua parecida com o ponto clicado (na imagem-guia ou na própria camada).
@@ -465,7 +500,7 @@ function pickGuideColor(x, y) {
 // ================= cursor e leitura =================
 function updateCursorSize() {
   const t = S.tool;
-  const cross = (t === 'pick' || t === 'fill' || t === 'ruler' || t === 'river' || t === 'road' || t === 'marker') && !spaceDown;
+  const cross = (t === 'pick' || t === 'fill' || t === 'ruler' || t === 'river' || t === 'road' || t === 'marker' || t === 'stamp') && !spaceDown;
   cursorEl.classList.toggle('cross', cross);
   if (!cross) { const d = S.brush.size * S.view.s; cursorEl.style.width = cursorEl.style.height = d + 'px'; }
   else { cursorEl.style.width = cursorEl.style.height = ''; }
@@ -499,6 +534,7 @@ vp.addEventListener('pointerdown', (e) => {
   if (e.button === 0) {
     if (S.tool === 'marker') markerDown(toMap(e), e);
     else if (S.tool === 'river' || S.tool === 'road') Feat.down(toMap(e), e);
+    else if (S.tool === 'stamp') Stamps.apply(toMap(e));
     else startTool(toMap(e), e.shiftKey);
   }
 });
@@ -515,6 +551,7 @@ vp.addEventListener('pointermove', (e) => {
   if (S.ruler && S.ruler.drag) { S.ruler.b = p; renderRuler(); }
   if (markerDrag) markerMove(p);
   if (S.tool === 'river' || S.tool === 'road') Feat.move(p, e);
+  if (S.tool === 'stamp') Stamps.preview(p);
   updateReadout(p);
 });
 vp.addEventListener('pointerup', () => {
@@ -528,6 +565,7 @@ vp.addEventListener('pointerleave', () => { if (!stroke && !pan) cursorEl.style.
 vp.addEventListener('pointerenter', () => { cursorEl.style.display = S.tool === 'pan' ? 'none' : 'block'; });
 vp.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (S.tool === 'stamp' && (e.shiftKey || e.altKey)) { Stamps.turn(e.deltaY > 0 ? 15 : -15); return; } // Shift+roda gira o carimbo
   const r = vp.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
   const v = S.view, ns = clamp(v.s * Math.exp(-e.deltaY * 0.0015), 0.05, 40);
   v.tx = mx - ((mx - v.tx) * ns) / v.s; v.ty = my - ((my - v.ty) * ns) / v.s; v.s = ns;
@@ -629,7 +667,7 @@ async function autoRelief() {
 function setActive(id) {
   S.active = id;
   if (id !== 'sculpt') S.lastLayer = id;
-  if (id !== 'sculpt' && S.tool === 'level') setTool('paint');
+  if (id !== 'sculpt' && ['level', 'stamp', 'erodeb'].includes(S.tool)) setTool('paint');
   buildRegionList(); buildVegList(); buildBiomeList();
   UI.sync();
   drawOverlay();
@@ -845,7 +883,7 @@ function bindControls() {
 }
 
 function setTool(t) {
-  if (t === 'level' && S.active !== 'sculpt') setActive('sculpt');
+  if (['level', 'stamp', 'erodeb'].includes(t) && S.active !== 'sculpt') setActive('sculpt');
   if (t === 'river' && S.active !== 'rivers') setActive('rivers');
   if (t !== 'ruler' && S.ruler) { S.ruler = null; renderRuler(); }
   if (t !== 'river' && S.riverA) S.riverA = null;
@@ -857,6 +895,7 @@ function setTool(t) {
   buildMarkerPalette();
   updateCursorSize();
   Feat.render();
+  Stamps.preview();
 }
 
 function setMode(m) {
@@ -2395,9 +2434,9 @@ window.addEventListener('keydown', (e) => {
   const n = parseInt(e.key, 10);
   if (n >= 1 && n <= 9) { setActive(LAYERS[n - 1].id); return; }
   if (e.key === 'Escape' && S.ruler) { S.ruler = null; renderRuler(); return; }
-  if (Feat.key(e)) return;
+  if (Feat.key(e) || Stamps.key(e)) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.markerSel != null) { e.preventDefault(); deleteMarker(S.markerSel); return; }
-  const tools = { h: 'pan', b: 'paint', e: 'erase', s: 'smooth', g: 'fill', i: 'pick', n: 'level', v: 'river', t: 'road', r: 'ruler', m: 'marker' };
+  const tools = { h: 'pan', b: 'paint', e: 'erase', s: 'smooth', g: 'fill', i: 'pick', n: 'level', v: 'river', t: 'road', r: 'ruler', m: 'marker', k: 'stamp', o: 'erodeb' };
   const k = e.key.toLowerCase();
   // o Balde não funciona no Esculpir: volta para a última camada comum
   if (tools[k]) { if (k === 'g' && S.active === 'sculpt') setActive(S.lastLayer || 'land'); setTool(tools[k]); return; }
@@ -2428,7 +2467,7 @@ function refreshLanguage() {
   S.biome = new Uint8Array(S.W * S.W);
   setupCanvases();
   UI.init();
-  Feat.bindOptions();
+  Feat.bindOptions(); Stamps.bindOptions();
   buildPresets();
   try { const ue = localStorage.getItem('forja.ue'); if (ue) S.ex.ue = UE.version(ue).id; } catch (e) { /* sem localStorage: fica o padrão */ }
   I18N.init(refreshLanguage); // antes de montar os painéis: os números já saem no formato do idioma

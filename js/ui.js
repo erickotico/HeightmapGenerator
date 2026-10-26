@@ -27,6 +27,8 @@ const UI = (() => {
     flag: 'M5 22V3M5 4h12l-2.5 4L17 12H5',
     road: 'M8 2L4 22M16 2l4 20M12 3v3M12 10v4M12 18v3',
     lake: 'M3 14c0-3.5 4-6 9-6s9 2.5 9 6-4 6-9 6-9-2.5-9-6zM7 14c1.5-1 3-1 4.5 0M12.5 16.5c1.5-1 3-1 4.5 0',
+    stamp: 'M2 20h20M4 20l4-8 3 3 4-9 5 14M14 9l1.5 2',
+    erode: 'M3 19c4-1 5-6 9-6s5 5 9 6M8 4v3M12 3v4M16 4v3M10 9l-.5 1.5M14 9l.5 1.5',
     biome: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.5 10h5l2 3-1.5 4M14 3.5l-1 4 3 2 4.5-1M14 21v-4l3-2h3.5'
   };
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[n] || ICONS.brush}"/></svg>`;
@@ -45,7 +47,9 @@ const UI = (() => {
     { id: 'sculpt', items: [
       { tool: 'paint', layer: 'sculpt', name: 'Elevar (m)', icon: 'raise' },
       { tool: 'erase', layer: 'sculpt', name: 'Rebaixar (m)', icon: 'lower' },
-      { tool: 'level', layer: 'sculpt', name: 'Nivelar (altura exata)', key: 'N', icon: 'level' }] },
+      { tool: 'level', layer: 'sculpt', name: 'Nivelar (altura exata)', key: 'N', icon: 'level' },
+      { tool: 'stamp', layer: 'sculpt', name: 'Carimbo de relevo', key: 'K', icon: 'stamp' },
+      { tool: 'erodeb', layer: 'sculpt', name: 'Pincel de erosão', key: 'O', icon: 'erode' }] },
     { id: 'paths', items: [
       { tool: 'river', name: 'Rio (linha editável)', key: 'V', icon: 'river' },
       { tool: 'road', name: 'Estrada / trilha', key: 'T', icon: 'road' },
@@ -71,6 +75,8 @@ const UI = (() => {
     if (t === 'marker') return ['marker', S.markerKind === 'env' ? 1 : 0];
     if (S.active === 'veg' && (t === 'paint' || t === 'erase')) return ['veg', t === 'erase' ? VEG_TYPES.length : S.vegBrush - 1];
     if (S.active === 'biome' && (t === 'paint' || t === 'erase')) return ['biome', t === 'erase' ? BIOMES.length : S.biomeBrush - 1];
+    if (t === 'stamp') return ['sculpt', 3];
+    if (t === 'erodeb') return ['sculpt', 4];
     if (S.active === 'sculpt' && (t === 'paint' || t === 'erase' || t === 'level')) return ['sculpt', { paint: 0, erase: 1, level: 2 }[t]];
     if (t === 'paint' || t === 'erase' || t === 'smooth') return ['brush', { paint: 0, erase: 1, smooth: 2 }[t]];
     if (t === 'fill' || t === 'pick') return ['fill', t === 'fill' ? 0 : 1];
@@ -204,6 +210,8 @@ const UI = (() => {
     if (t === 'ruler') return 'Arraste para medir distância, alturas, inclinação e tempo a pé. Esc apaga.';
     if (t === 'river') return S.riverA ? 'Agora clique no destino (mar, lago ou outro rio). Esc cancela.' : 'Clique na nascente e depois no destino: o rio segue os vales. Arraste os pontos · 2 cliques na linha = ponto novo · Alt+clique apaga ponto · Delete apaga o rio.';
     if (t === 'road') return S.roadDraft ? 'Clique no próximo ponto de passagem. Enter ou 2 cliques terminam · Esc termina/cancela.' : 'Clique nos pontos de passagem (cidades, pontes, passos): a rota segue o relevo. Arraste os pontos · Alt+clique apaga · Delete apaga a estrada.';
+    if (t === 'stamp') return 'Clique para carimbar. [ ] tamanho · , . ou Shift+roda giram. Vai para a camada Esculpir (Ctrl+Z desfaz).';
+    if (t === 'erodeb') return 'Pinte sobre as montanhas e solte: a chuva escava ravinas só ali. Força = quanta chuva.';
     if (t === 'pan') return 'Arraste para mover o mapa. Roda do mouse = zoom. F enquadra.';
     if (t === 'marker') return 'Clique para pôr; arraste para mover; Delete apaga o selecionado.';
     return '';
@@ -212,9 +220,10 @@ const UI = (() => {
     const t = S.tool, a = S.active, sculpt = a === 'sculpt', reg = isIdLayer(a);
     const stroke = ['paint', 'erase', 'smooth', 'level'].includes(t);
     const show = {
-      size: stroke,
-      strength: stroke && !reg,
+      size: stroke || t === 'erodeb',
+      strength: (stroke && !reg) || t === 'erodeb',
       hardness: stroke,
+      stamp: t === 'stamp',
       intensity: (t === 'paint' && !sculpt && !reg) || (t === 'fill' && !reg),
       sculptAmt: sculpt && (t === 'paint' || t === 'erase'),
       sculptTarget: t === 'level' || (t === 'pick' && sculpt),
@@ -244,6 +253,7 @@ const UI = (() => {
       sel.value = S.markerType;
     }
     if (t === 'river' || t === 'road') Feat.syncOptions();
+    if (t === 'stamp') Stamps.syncOptions();
   }
   function rememberMarkerType() { lastMarkerType[S.markerKind] = S.markerType; }
 

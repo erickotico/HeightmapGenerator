@@ -439,12 +439,13 @@ function ForjaEngine() {
   // ================= erosão =================
   // Hidráulica por partículas (gotas de chuva que arrancam e depositam sedimento).
   // Alturas normalizadas para a faixa em que o algoritmo de referência se comporta bem.
-  function erodeHydraulic(H, W, P, seed) {
+  // opt (pincel de erosão): k = escala fixa (a do mapa inteiro), drops = quantas gotas, spawn(rnd) = onde cai cada uma
+  function erodeHydraulic(H, W, P, seed, opt = {}) {
     const N = W * W;
     let maxH = 0, land = 0;
     for (let i = 0; i < N; i++) { if (H[i] > maxH) maxH = H[i]; if (H[i] > 0) land++; }
     if (maxH <= 0 || land === 0) return;
-    const k = (W / 256) / maxH;
+    const k = opt.k || (W / 256) / maxH;
     const h = new Float32Array(N);
     for (let i = 0; i < N; i++) h[i] = H[i] * k;
 
@@ -461,12 +462,13 @@ function ForjaEngine() {
     const rnd = mulberry32((seed * 7 + 3) >>> 0);
     const inertia = P.erInertia, capF = 4, minCap = 0.01, erodeS = P.erStrength, depS = P.erDeposit;
     const evap = P.erEvaporation, grav = 4, life = Math.round(P.erLifetime);
-    const drops = Math.min(4000000, Math.round(P.erDensity * land));
+    const drops = Math.min(4000000, opt.drops || Math.round(P.erDensity * land));
 
     for (let d = 0; d < drops; d++) {
       if (d % 20000 === 0) progress('Erosão hidráulica', d / drops);
       let px = 0, py = 0;
-      for (let t = 0; t < 8; t++) {
+      if (opt.spawn) [px, py] = opt.spawn(rnd);
+      else for (let t = 0; t < 8; t++) {
         px = 1 + rnd() * (W - 3); py = 1 + rnd() * (W - 3);
         if (h[(py | 0) * W + (px | 0)] > 0) break;
       }
@@ -509,6 +511,48 @@ function ForjaEngine() {
       }
     }
     for (let i = 0; i < N; i++) H[i] = h[i] / k;
+  }
+
+  // Pincel de erosão: as mesmas gotas, mas só caindo na área pintada (recorte quadrado com folga, porque a água
+  // escorre para fora dela e deposita lá embaixo). Devolve a diferença, que o app soma na camada Esculpir.
+  // Escala igual à da erosão do mapa inteiro (k pela altura máxima do mapa), então o resultado combina.
+  function erodeLocal(m) {
+    const W = S.W, base = S.base, pad = Math.max(8, Math.round(m.P.erLifetime * 0.6));
+    let maxH = 0;
+    for (let i = 0; i < base.length; i++) if (base[i] > maxH) maxH = base[i];
+    const side = Math.min(W, Math.max(m.w, m.h) + 2 * pad);
+    const X0 = clamp(Math.round(m.x0 + m.w / 2 - side / 2), 0, W - side), Y0 = clamp(Math.round(m.y0 + m.h / 2 - side / 2), 0, W - side);
+    const crop = new Float32Array(side * side);
+    for (let y = 0; y < side; y++) crop.set(base.subarray((Y0 + y) * W + X0, (Y0 + y) * W + X0 + side), y * side);
+    const orig = Float32Array.from(crop), cells = [];
+    let area = 0;
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+      const v = m.mask[y * m.w + x], gx = m.x0 + x - X0, gy = m.y0 + y - Y0;
+      if (v > 0.05 && gx >= 1 && gy >= 1 && gx < side - 2 && gy < side - 2 && crop[gy * side + gx] > 0) { cells.push(gy * side + gx); area += v; }
+    }
+    if (!cells.length || maxH <= 0) return { side: 0 };
+    const drops = Math.round(m.P.erDensity * area * (0.3 + 2 * m.strength)); // Força 0,35 ≈ a mesma chuva da erosão do mapa todo
+    erodeHydraulic(crop, side, m.P, (Math.random() * 1e9) | 0, {
+      k: (W / 256) / maxH, drops,
+      spawn: (rnd) => { const c = cells[(rnd() * cells.length) | 0]; return [(c % side) + rnd(), ((c / side) | 0) + rnd()]; }
+    });
+    const delta = new Float32Array(side * side);
+    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+      const e = Math.min(x, y, side - 1 - x, side - 1 - y); // some suave perto da borda do recorte (sem degrau)
+      delta[y * side + x] = (crop[y * side + x] - orig[y * side + x]) * smooth01(e / pad);
+    }
+    // duas passadas de média 3×3: tira o pontilhado de sedimento das gotas, mantém as ravinas
+    let d = delta;
+    for (let pass = 0; pass < 2; pass++) {
+      const o = new Float32Array(side * side);
+      for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+        let sum = 0, n = 0;
+        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const xx = x + i, yy = y + j; if (xx >= 0 && yy >= 0 && xx < side && yy < side) { sum += d[yy * side + xx]; n++; } }
+        o[y * side + x] = sum / n;
+      }
+      d = o;
+    }
+    return { side, x0: X0, y0: Y0, delta: d };
   }
 
   // Térmica: material desliza onde a encosta passa do ângulo de repouso.
@@ -1083,6 +1127,12 @@ function ForjaEngine() {
         if (S.roads) applyRoads(H, S.roads);
         S.eroded = H;
         reply(m.id, m);
+      } else if (m.type === 'erodeLocal') {
+        S.P = m.P;
+        if (!S.base) throw new Error('Gere o terreno primeiro.');
+        const r = erodeLocal(m);
+        progress('', 1);
+        post({ type: 'erodeLocal', id: m.id, ...r }, r.delta ? [r.delta.buffer] : []);
       } else if (m.type === 'recolor') {
         S.P = m.P;
         if (!S.base) throw new Error('Nada para colorir ainda.');
