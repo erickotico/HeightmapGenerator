@@ -1666,12 +1666,19 @@ function buildPresets() {
 }
 async function applyPreset() {
   const pr = PRESETS.find((p) => p.id === $('#presetSel').value);
-  if (!confirm(`Aplicar o modelo "${pr.name}"?\nTerra, relevo pintado e ajustes de terreno serão trocados (regiões e imagem-guia ficam).\nCtrl+Z desfaz a pintura; "Restaurar padrões" volta os ajustes.`)) return;
-  snapshot([...FLOAT_LAYERS, 'sculpt', 'base']);
+  if (!confirm(`Aplicar o modelo "${pr.name}"?\nO mapa começa do zero: terra, relevo, rios, lagos, estradas, marcadores, regiões, vegetação e biomas são apagados (só a imagem-guia fica).\nCtrl+Z desfaz; "Restaurar padrões" volta os ajustes.`)) return;
+  // modelo novo = mapa novo: tudo o que estava em cima do terreno antigo some junto (não faria sentido no relevo novo)
+  snapshot([...FLOAT_LAYERS, 'sculpt', 'base', 'regions', 'veg', 'biome', 'markers', 'vrivers', 'roads']);
   S.P = { ...DEFAULT_P, seed: S.P.seed, ...pr.P };
   refreshParamInputs(); sync3DParams();
   for (const id of FLOAT_LAYERS) S.masks[id].fill(0);
   S.sculpt.fill(0); S.base = null; updateBasePanel();
+  S.regions.fill(0); buildRegionList();
+  S.veg.fill(0); scheduleVegDraw(); buildVegList();
+  S.biome.fill(0); buildBiomeList();
+  S.markers = []; S.markerSel = null; renderMarkers(); buildMarkerList();
+  S.vrivers = []; S.roads = []; S.featSel = null; S.riverA = null; S.roadDraft = null; Feat.buildList(); Feat.render();
+  S.ruler = null; renderRuler();
   $('#autoStyle').value = pr.style; $('#autoCoverage').value = pr.coverage; updateCoverageOut();
   try {
     const a = await call('autoLand', { W: S.W, P: S.P, style: pr.style, coverage: pr.coverage });
